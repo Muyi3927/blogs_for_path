@@ -1,10 +1,12 @@
+
 import { BlogPost, UserRole, User, Category } from '../types';
 
 export const MOCK_USER: User = {
   id: 'u1',
-  username: 'AdminUser',
+  username: 'AdminUser', // 您的笔名
   role: UserRole.ADMIN,
-  avatarUrl: 'https://ui-avatars.com/api/?name=Admin+User&background=0D8ABC&color=fff'
+  // 您可以将头像图片放在 public/avatar.jpg，然后在这里写 '/avatar.jpg'
+  avatarUrl: 'https://ui-avatars.com/api/?name=Ancient+Path&background=0D8ABC&color=fff'
 };
 
 export const INITIAL_CATEGORIES: Category[] = [
@@ -15,9 +17,42 @@ export const INITIAL_CATEGORIES: Category[] = [
   { id: 'c5', name: '祷告', parentId: 'c4' },
   { id: 'c6', name: '家庭', parentId: 'c4' },
   { id: 'c7', name: '教会历史', parentId: null },
+  // 添加新分类：复制上面一行，修改 id 和 name 即可
 ];
 
+/**
+ * 🟢 如何添加新文章 (Git 模式):
+ * 
+ * 1. 图片上传: 将图片文件(例如 church.jpg)放入项目的 public/ 文件夹中。
+ *    在代码中引用时，直接写文件名: '/church.jpg'
+ * 
+ * 2. 音频上传: 将音频文件(例如 sermon.mp3)放入 public/ 文件夹中。
+ *    引用: '/sermon.mp3'
+ * 
+ * 3. 复制下方的对象结构，粘贴到 INITIAL_POSTS 数组的最上方。
+ */
+
 export const INITIAL_POSTS: BlogPost[] = [
+  // === 在这里添加新文章 ===
+  // {
+  //   id: 'new-post-1', // 唯一的ID，不要重复
+  //   title: '这里写标题',
+  //   excerpt: '这里写简短的摘要，显示在卡片上。',
+  //   content: `# 文章标题
+  //
+  //   这里使用 Markdown 格式写正文。
+  //   **加粗**，*斜体*。
+  //   `,
+  //   coverImage: 'https://picsum.photos/800/400', // 或者使用本地图片: '/my-image.jpg'
+  //   author: MOCK_USER,
+  //   createdAt: Date.now(), // 或者写具体的毫秒时间戳
+  //   categoryId: 'c1', // 对应上面的分类 ID
+  //   tags: ['标签1', '标签2'],
+  //   views: 0,
+  //   isFeatured: true, // 是否在首页轮播图显示
+  //   // audioUrl: '/my-sermon.mp3' // 可选：如果有音频
+  // },
+  
   {
     id: '1',
     title: '唯独恩典：改革宗信仰的核心',
