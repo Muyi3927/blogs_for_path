@@ -1,3 +1,7 @@
+name = "ancientpath-backend"
+main = "。、./index.ts"
+compatibility_date = "2023-10-30"
+
 [[d1_databases]]
 binding = "DB"
 database_name = "lumina-blog-db"
@@ -7,6 +11,8 @@ database_id = "ceb06d47-9d5e-4c5c-a18c-595bc69d4981"
 binding = "BUCKET"
 bucket_name = "lumina-blog-media"
 
+# 允许跨域访问
+[vars]
 [vars]
 # 填写您刚才开启的公开访问网址，必须带 https://
 # 例如: https://pub-123456.r2.dev 或 https://media.yourdomain.com
