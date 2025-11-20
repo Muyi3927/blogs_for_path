@@ -8,6 +8,7 @@ import { Login } from './pages/Login';
 import { About } from './pages/About';
 import { ThemeContextType, AuthContextType, User, UserRole, BlogPost, Category } from './types';
 import { INITIAL_POSTS, INITIAL_CATEGORIES } from './services/mockData';
+import { api } from './services/api';
 
 // Contexts
 export const ThemeContext = createContext<ThemeContextType>({
@@ -33,6 +34,7 @@ const App: React.FC = () => {
   // Data State
   const [posts, setPosts] = useState<BlogPost[]>(INITIAL_POSTS);
   const [categories, setCategories] = useState<Category[]>(INITIAL_CATEGORIES);
+  const [loading, setLoading] = useState(true);
 
   // Initialize Theme
   useEffect(() => {
@@ -44,6 +46,29 @@ const App: React.FC = () => {
     if (isDark) document.documentElement.classList.add('dark');
     else document.documentElement.classList.remove('dark');
   }, [isDark]);
+
+  // Fetch Data from Backend
+  useEffect(() => {
+    const loadData = async () => {
+      try {
+        const [fetchedPosts, fetchedCategories] = await Promise.all([
+          api.getPosts(),
+          api.getCategories()
+        ]);
+        
+        // Only update if we got valid data back (and not just empty arrays if the DB is empty, unless we want that)
+        // For now, if API returns empty (initial deploy), we might want to show empty or keep mock?
+        // Let's trust the API result.
+        if (fetchedPosts) setPosts(fetchedPosts);
+        if (fetchedCategories && fetchedCategories.length > 0) setCategories(fetchedCategories);
+      } catch (e) {
+        console.error("Failed to load data from API, using mock", e);
+      } finally {
+        setLoading(false);
+      }
+    };
+    loadData();
+  }, []);
 
   const toggleTheme = () => setIsDark(!isDark);
 
@@ -111,6 +136,14 @@ const App: React.FC = () => {
   const updatePost = (updatedPost: BlogPost) => {
       setPosts(posts.map(p => p.id === updatedPost.id ? updatedPost : p));
   };
+
+  if (loading) {
+      return (
+          <div className="min-h-screen flex items-center justify-center bg-slate-50 dark:bg-slate-950">
+              <div className="animate-spin rounded-full h-12 w-12 border-t-2 border-b-2 border-primary-600"></div>
+          </div>
+      );
+  }
 
   return (
     <ThemeContext.Provider value={{ isDark, toggleTheme }}>

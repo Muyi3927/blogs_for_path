@@ -1,9 +1,10 @@
-import React, { useState, useContext, useEffect, useMemo } from 'react';
+import React, { useState, useContext, useEffect, useMemo, useRef } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
 import { AuthContext } from '../App';
 import { BlogPost, Category } from '../types';
-import { Save, Eye, Edit3, X, Plus, ArrowLeft, Tag as TagIcon, Image as ImageIcon, Star, Mic, Trash2, Settings } from 'lucide-react';
+import { Save, Eye, Edit3, X, ArrowLeft, Tag as TagIcon, Image as ImageIcon, Star, Mic, Trash2, Settings, Upload, Loader2 } from 'lucide-react';
 import MarkdownRenderer from '../components/MarkdownRenderer';
+import { api } from '../services/api';
 
 interface EditorProps {
   onSave: (post: BlogPost) => void;
@@ -30,11 +31,18 @@ export const Editor: React.FC<EditorProps> = ({ onSave, categories, onAddCategor
   const [isFeatured, setIsFeatured] = useState(false);
 
   const [previewMode, setPreviewMode] = useState(false);
+  const [isSubmitting, setIsSubmitting] = useState(false);
+  const [uploadingImage, setUploadingImage] = useState(false);
+  const [uploadingAudio, setUploadingAudio] = useState(false);
   
   // Category Creation/Management State
   const [isManagingCategory, setIsManagingCategory] = useState(false);
   const [newCategoryName, setNewCategoryName] = useState('');
   const [newCategoryParent, setNewCategoryParent] = useState<string>(''); // empty string = root
+
+  // Refs for file inputs
+  const imageInputRef = useRef<HTMLInputElement>(null);
+  const audioInputRef = useRef<HTMLInputElement>(null);
 
   const suggestedTags = useMemo(() => {
     const allTags = new Set<string>();
@@ -67,6 +75,34 @@ export const Editor: React.FC<EditorProps> = ({ onSave, categories, onAddCategor
     return <div className="text-center py-20 text-red-500 font-bold">拒绝访问。仅限管理员。</div>;
   }
 
+  // File Upload Handlers
+  const handleFileUpload = async (e: React.ChangeEvent<HTMLInputElement>, type: 'image' | 'audio') => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    // In production, use a real secret or token from AuthContext
+    const token = "my-secret-password"; 
+
+    try {
+      if (type === 'image') setUploadingImage(true);
+      else setUploadingAudio(true);
+
+      const uploadedUrl = await api.uploadFile(file, token);
+
+      if (type === 'image') setCoverImage(uploadedUrl);
+      else setAudioUrl(uploadedUrl);
+
+    } catch (error) {
+      alert(`上传失败: ${error instanceof Error ? error.message : '未知错误'}\n\n提示: 您需要部署后端 Worker 才能使用上传功能。`);
+      console.error(error);
+    } finally {
+      if (type === 'image') setUploadingImage(false);
+      else setUploadingAudio(false);
+      // Reset input
+      e.target.value = '';
+    }
+  };
+
   const handleAddTag = (tag: string) => {
     const trimmed = tag.trim();
     if (trimmed && !currentTags.includes(trimmed)) {
@@ -86,14 +122,15 @@ export const Editor: React.FC<EditorProps> = ({ onSave, categories, onAddCategor
     setCurrentTags(currentTags.filter(t => t !== tagToRemove));
   };
 
-  const handleSave = () => {
+  const handleSave = async () => {
     if (!title || !content) return alert("标题和内容不能为空");
     
+    setIsSubmitting(true);
     const finalCoverImage = coverImage || `https://picsum.photos/800/400?random=${Math.floor(Math.random()*100)}`;
     const finalExcerpt = excerpt.trim() || (content.substring(0, 100) + '...');
 
     const newPost: BlogPost = {
-      id: id || Date.now().toString(),
+      id: id || crypto.randomUUID(), // Use UUID for API compatibility
       title,
       excerpt: finalExcerpt,
       content,
@@ -108,7 +145,16 @@ export const Editor: React.FC<EditorProps> = ({ onSave, categories, onAddCategor
       audioUrl
     };
 
+    // Try saving to API first
+    try {
+       // Note: Ideally we pass the auth token here
+       await api.savePost(newPost, "my-secret-password");
+    } catch (e) {
+       console.warn("Backend save failed, falling back to local state only", e);
+    }
+
     onSave(newPost);
+    setIsSubmitting(false);
     navigate('/');
   };
 
@@ -120,7 +166,6 @@ export const Editor: React.FC<EditorProps> = ({ onSave, categories, onAddCategor
     }
   };
 
-  // Handler for deleting category to ensure event doesn't bubble
   const handleDeleteCategoryClick = (e: React.MouseEvent, catId: string) => {
     e.preventDefault();
     e.stopPropagation();
@@ -146,9 +191,11 @@ export const Editor: React.FC<EditorProps> = ({ onSave, categories, onAddCategor
            </button>
            <button 
             onClick={handleSave}
-            className="px-6 py-2 rounded-full bg-green-600 text-white hover:bg-green-700 flex items-center text-sm font-bold shadow-lg shadow-green-500/30 transition-colors"
+            disabled={isSubmitting}
+            className="px-6 py-2 rounded-full bg-green-600 text-white hover:bg-green-700 disabled:opacity-50 flex items-center text-sm font-bold shadow-lg shadow-green-500/30 transition-colors"
            >
-             <Save className="w-4 h-4 mr-2" /> 发布
+             {isSubmitting ? <Loader2 className="w-4 h-4 mr-2 animate-spin" /> : <Save className="w-4 h-4 mr-2" />}
+             发布
            </button>
         </div>
       </div>
@@ -189,6 +236,7 @@ export const Editor: React.FC<EditorProps> = ({ onSave, categories, onAddCategor
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                     {/* Cover Image Input */}
                     <div className="flex flex-col gap-2">
+                        <input type="file" ref={imageInputRef} className="hidden" accept="image/*" onChange={(e) => handleFileUpload(e, 'image')} />
                         <div className="flex items-center gap-2 bg-slate-50 dark:bg-slate-800 border border-slate-100 dark:border-slate-700 rounded-lg px-3 py-2">
                             <ImageIcon className="w-4 h-4 text-slate-400" />
                             <input 
@@ -198,11 +246,20 @@ export const Editor: React.FC<EditorProps> = ({ onSave, categories, onAddCategor
                                 placeholder="封面图片链接 (https://...)"
                                 className="flex-grow bg-transparent text-sm focus:outline-none"
                             />
+                            <button 
+                                onClick={() => imageInputRef.current?.click()}
+                                disabled={uploadingImage}
+                                className="p-1.5 bg-slate-200 dark:bg-slate-700 rounded hover:bg-primary-100 text-slate-600 hover:text-primary-600 transition-colors"
+                                title="上传图片"
+                            >
+                                {uploadingImage ? <Loader2 className="w-4 h-4 animate-spin"/> : <Upload className="w-4 h-4"/>}
+                            </button>
                         </div>
                     </div>
 
                     {/* Audio URL Input */}
                      <div className="flex flex-col gap-2">
+                        <input type="file" ref={audioInputRef} className="hidden" accept="audio/*" onChange={(e) => handleFileUpload(e, 'audio')} />
                         <div className="flex items-center gap-2 bg-slate-50 dark:bg-slate-800 border border-slate-100 dark:border-slate-700 rounded-lg px-3 py-2">
                             <Mic className="w-4 h-4 text-slate-400" />
                             <input 
@@ -212,6 +269,14 @@ export const Editor: React.FC<EditorProps> = ({ onSave, categories, onAddCategor
                                 placeholder="音频链接 (mp3/wav...)"
                                 className="flex-grow bg-transparent text-sm focus:outline-none"
                             />
+                            <button 
+                                onClick={() => audioInputRef.current?.click()}
+                                disabled={uploadingAudio}
+                                className="p-1.5 bg-slate-200 dark:bg-slate-700 rounded hover:bg-primary-100 text-slate-600 hover:text-primary-600 transition-colors"
+                                title="上传音频"
+                            >
+                                {uploadingAudio ? <Loader2 className="w-4 h-4 animate-spin"/> : <Upload className="w-4 h-4"/>}
+                            </button>
                         </div>
                     </div>
                 </div>

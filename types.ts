@@ -44,3 +44,10 @@ export interface AuthContextType {
   isAuthenticated: boolean;
   isAdmin: boolean;
 }
+
+// API Response Wrappers
+export interface ApiResponse<T> {
+  success: boolean;
+  data?: T;
+  error?: string;
+}
