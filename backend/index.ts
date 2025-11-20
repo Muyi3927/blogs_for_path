@@ -114,7 +114,7 @@ app.post('/api/posts', async (c) => {
   }
 });
 
-// 4. Upload File to R2 (Protected)
+// 4. Upload File to R2 (Protected) - 自动分文件夹
 app.put('/api/upload', async (c) => {
   if (!checkAuth(c)) return c.json({ error: 'Unauthorized' }, 401);
 
@@ -123,29 +123,39 @@ app.put('/api/upload', async (c) => {
     const file = formData['file'];
 
     if (!file || !(file instanceof File)) {
-        return c.json({ error: 'No file uploaded' }, 400);
+      return c.json({ error: 'No file uploaded' }, 400);
     }
 
-    const fileName = `${Date.now()}-${file.name.replace(/[^a-zA-Z0-9.-]/g, '')}`;
-    
-    // Upload to R2
-    await c.env.BUCKET.put(fileName, file.stream(), {
-        httpMetadata: { contentType: file.type }
+    // === 新增：根据文件类型自动决定文件夹 ===
+    const ext = file.name.split('.').pop()?.toLowerCase() || '';
+    const audioExts = ['mp3', 'wav', 'ogg', 'm4a', 'aac', 'flac', 'webm'];
+    const imageExts = ['jpg', 'jpeg', 'png', 'gif', 'webp', 'svg', 'bmp'];
+
+    let folder = 'others/'; // 默认
+    if (imageExts.includes(ext)) {
+      folder = 'images/';
+    } else if (audioExts.includes(ext)) {
+      folder = 'audios/';
+    }
+
+    // 生成文件名（时间戳 + 原文件名）
+    const safeName = `${Date.now()}-${file.name.replace(/[^a-zA-Z0-9.-]/g, '_')}`;
+    const key = `${folder}${safeName}`;  // 关键：这里拼接文件夹
+
+    // 上传到 R2（key 包含文件夹）
+    await c.env.BUCKET.put(key, file.stream(), {
+      httpMetadata: { contentType: file.type }
     });
 
-    // Construct Public URL
-    // 1. Best: Use the configured custom domain from environment variables
-    // 2. Fallback: Try to guess an R2.dev URL (Requires R2 "Public Access" enabled in dashboard)
-    // 3. Placeholder: If neither is set, user needs to configure it.
+    // 生成公开 URL（自动带文件夹）
     let publicUrl = '';
-    
     if (c.env.R2_PUBLIC_DOMAIN) {
-        publicUrl = `${c.env.R2_PUBLIC_DOMAIN}/${fileName}`;
+      const base = c.env.R2_PUBLIC_DOMAIN.endsWith('/') 
+        ? c.env.R2_PUBLIC_DOMAIN.slice(0, -1) 
+        : c.env.R2_PUBLIC_DOMAIN;
+      publicUrl = `${base}/${key}`;  // 自动变成 /images/xxx.png 或 /audios/xxx.mp3
     } else {
-        // NOTE: This is a placeholder! You need to enable Public Access for your R2 bucket
-        // and replace this with your actual R2.dev subdomain or Custom Domain.
-        // Go to Cloudflare Dashboard -> R2 -> Your Bucket -> Settings -> Public Access
-        publicUrl = `https://REPLACE_WITH_YOUR_R2_SUBDOMAIN.r2.dev/${fileName}`;
+      return c.json({ error: 'R2_PUBLIC_DOMAIN 未配置' }, 500);
     }
 
     return c.json({ url: publicUrl });
