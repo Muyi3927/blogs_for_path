@@ -1,72 +1,28 @@
--- ========================
--- Categories Table
--- ========================
-PRAGMA foreign_keys = OFF;
-DROP TABLE IF EXISTS categories;
-
-CREATE TABLE categories (
-    id INTEGER PRIMARY KEY AUTOINCREMENT,
-    name TEXT NOT NULL,
-    parentId INTEGER,
-    FOREIGN KEY (parentId) REFERENCES categories(id)
+-- schema.sql  修改后版本
+CREATE TABLE IF NOT EXISTS posts (
+  id TEXT PRIMARY KEY,
+  title TEXT NOT NULL,
+  excerpt TEXT,
+  content TEXT NOT NULL,
+  coverImage TEXT,
+  createdAt INTEGER NOT NULL,
+  updatedAt INTEGER NOT NULL,
+  categoryId TEXT,
+  tags TEXT,
+  isFeatured INTEGER DEFAULT 0,
+  audioUrl TEXT,
+  authorName TEXT DEFAULT 'Admin'
 );
 
--- Seed categories
-INSERT INTO categories (name, parentId) VALUES
-  ('Technology', NULL),
-  ('Life', NULL),
-  ('Faith', NULL),
-  ('Programming', 1),
-  ('Frontend', 4),
-  ('Backend', 4),
-  ('DevOps', 4);
-
-
--- ========================
--- Articles Table
--- ========================
-DROP TABLE IF EXISTS articles;
-
-CREATE TABLE articles (
-    id INTEGER PRIMARY KEY AUTOINCREMENT,
-    date TEXT NOT NULL,
-    title TEXT NOT NULL,
-    description TEXT,
-    content TEXT NOT NULL,
-    slug TEXT UNIQUE NOT NULL,
-    imageUrl TEXT,
-    category INTEGER,
-    url TEXT,
-    authorName TEXT,
-    views INTEGER DEFAULT 0,
-    FOREIGN KEY (category) REFERENCES categories(id)
+-- 只保留已有的列！删掉 description
+CREATE TABLE IF NOT EXISTS categories (
+  id TEXT PRIMARY KEY,
+  name TEXT NOT NULL
+  -- description TEXT   ← 删除这行，或者整行注释
 );
 
--- Seed article data
-INSERT INTO articles (
-    date, title, description, content, slug, imageUrl, category, url, authorName, views
-) VALUES
-(
-    '2025-01-01',
-    'Welcome to the Blog',
-    'First seed article to test database.',
-    'This is a sample content block for the very first seeded article.',
-    'welcome-to-the-blog',
-    '/images/sample1.jpg',
-    1,
-    'https://example.com/welcome',
-    'Admin',
-    0
-),
-(
-    '2025-01-02',
-    'Building a Blog with Cloudflare & D1',
-    'A simple guide to launching a modern web project.',
-    'Content for the second seeded article goes here.',
-    'cloudflare-d1-guide',
-    '/images/sample2.jpg',
-    4,
-    'https://example.com/cf-d1',
-    'Admin',
-    12
-);
+-- 默认分类也相应修改
+INSERT OR IGNORE INTO categories (id, name) VALUES 
+('1', '灵修笔记'),
+('2', '古道释经'),
+('3', '见证分享');
