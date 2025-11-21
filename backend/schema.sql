@@ -1,28 +1,30 @@
+drop table if exists posts;
+drop table if exists categories;
+
 -- schema.sql  修改后版本
+
+-- 文章表
+-- 使用自增整数作为主键，更整洁
 CREATE TABLE IF NOT EXISTS posts (
-  id TEXT PRIMARY KEY,
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
   title TEXT NOT NULL,
   excerpt TEXT,
   content TEXT NOT NULL,
   coverImage TEXT,
   createdAt INTEGER NOT NULL,
   updatedAt INTEGER NOT NULL,
-  categoryId TEXT,
+  categoryId INTEGER, -- 关联到 categories 表的 id
   tags TEXT,
   isFeatured INTEGER DEFAULT 0,
   audioUrl TEXT,
   authorName TEXT DEFAULT 'Admin'
 );
 
--- 只保留已有的列！删掉 description
+-- 分类表
 CREATE TABLE IF NOT EXISTS categories (
-  id TEXT PRIMARY KEY,
-  name TEXT NOT NULL
-  -- description TEXT   ← 删除这行，或者整行注释
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  name TEXT NOT NULL,
+  parentId INTEGER -- 父分类的 ID，用于实现层级关系
 );
 
--- 默认分类也相应修改
-INSERT OR IGNORE INTO categories (id, name) VALUES 
-('1', '灵修笔记'),
-('2', '古道释经'),
-('3', '见证分享');
+

@@ -7,7 +7,6 @@ import { Editor } from './pages/Editor';
 import { Login } from './pages/Login';
 import { About } from './pages/About';
 import { ThemeContextType, AuthContextType, User, UserRole, BlogPost, Category } from './types';
-import { INITIAL_POSTS, INITIAL_CATEGORIES } from './services/mockData';
 import { api } from './services/api';
 
 // Contexts
@@ -25,18 +24,18 @@ export const AuthContext = createContext<AuthContextType>({
 });
 
 const App: React.FC = () => {
-  // Theme State
+  // 主题状态
   const [isDark, setIsDark] = useState(false);
   
-  // Auth State
+  // 认证状态
   const [user, setUser] = useState<User | null>(null);
 
-  // Data State
-  const [posts, setPosts] = useState<BlogPost[]>(INITIAL_POSTS);
-  const [categories, setCategories] = useState<Category[]>(INITIAL_CATEGORIES);
+  // 数据状态 - 完全依赖后端，初始为空
+  const [posts, setPosts] = useState<BlogPost[]>([]);
+  const [categories, setCategories] = useState<Category[]>([]);
   const [loading, setLoading] = useState(true);
 
-  // Initialize Theme
+  // 初始化主题
   useEffect(() => {
     const isSystemDark = window.matchMedia('(prefers-color-scheme: dark)').matches;
     setIsDark(isSystemDark);
@@ -47,7 +46,7 @@ const App: React.FC = () => {
     else document.documentElement.classList.remove('dark');
   }, [isDark]);
 
-  // Fetch Data from Backend
+  // 从后端加载数据
   useEffect(() => {
     const loadData = async () => {
       try {
@@ -56,13 +55,11 @@ const App: React.FC = () => {
           api.getCategories()
         ]);
         
-        // Only update if we got valid data back (and not just empty arrays if the DB is empty, unless we want that)
-        // For now, if API returns empty (initial deploy), we might want to show empty or keep mock?
-        // Let's trust the API result.
+        // 仅当获取到有效数据时更新状态
         if (fetchedPosts) setPosts(fetchedPosts);
         if (fetchedCategories && fetchedCategories.length > 0) setCategories(fetchedCategories);
       } catch (e) {
-        console.error("Failed to load data from API, using mock", e);
+        console.error("从 API 加载数据失败", e);
       } finally {
         setLoading(false);
       }
@@ -93,12 +90,26 @@ const App: React.FC = () => {
   };
 
   const addCategory = (name: string, parentId: string | null) => {
-    const newCat: Category = {
-        id: `c${Date.now()}`,
-        name,
-        parentId
-    };
-    setCategories([...categories, newCat]);
+    // 乐观更新：先在 UI 上添加分类，然后持久化到后端
+    const tempId = `c${Date.now()}`;
+    const newCat: Category = { id: tempId, name, parentId };
+    setCategories(prev => [...prev, newCat]);
+
+    (async () => {
+      try {
+        const resp: any = await api.createCategory(name, parentId);
+        // 后端可能返回 { success: true, category: { id, name, parentId } }
+        const created = resp.category || resp;
+        if (created && created.id) {
+          // 用后端返回的真实 ID 替换临时 ID
+          setCategories(prev => prev.map(c => c.id === tempId ? { ...c, id: created.id, name: created.name, parentId: created.parentId } : c));
+        }
+      } catch (e) {
+        console.error('在服务器上创建分类失败，保留本地副本:', e);
+        // 可选：提醒用户
+        alert('无法保存分类到后端，已在本地显示。请检查后端部署或网络。');
+      }
+    })();
   };
 
   const deleteCategory = (id: string) => {
@@ -119,18 +130,32 @@ const App: React.FC = () => {
     }
 
     if (!window.confirm(warning)) return;
+    // 保留备份以便回滚
+    const prevCategories = categories;
+    const prevPosts = posts;
 
-    // Update posts associated with this category to have no category (or handle as 'Uncategorized' in UI)
+    // 更新与此分类关联的文章，使其变为无分类（或在 UI 中处理为“未分类”）
     if (affectedPostsCount > 0) {
         setPosts(prev => prev.map(p => p.categoryId === id ? { ...p, categoryId: '' } : p));
     }
-    
+
+    // 乐观更新：在 UI 中更新分类
     setCategories(prev => {
-      // Filter out the category to delete
       const filtered = prev.filter(c => c.id !== id);
-      // Update any children of this category to have no parent (top-level)
       return filtered.map(c => c.parentId === id ? { ...c, parentId: null } : c);
     });
+
+    (async () => {
+      try {
+        await api.deleteCategory(id);
+      } catch (e) {
+        console.error('在服务器上删除分类失败:', e);
+        alert('无法删除后端分类，已恢复本地数据。');
+        // 回滚
+        setCategories(prevCategories);
+        setPosts(prevPosts);
+      }
+    })();
   };
 
   const updatePost = (updatedPost: BlogPost) => {

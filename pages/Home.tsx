@@ -20,27 +20,28 @@ export const Home: React.FC<HomeProps> = ({ posts, categories }) => {
   const [activeCategoryId, setActiveCategoryId] = useState<string | null>(null);
   const [expandedCategories, setExpandedCategories] = useState<Set<string>>(new Set());
   const [currentPage, setCurrentPage] = useState(1);
-  const [isMobileCategoryOpen, setIsMobileCategoryOpen] = useState(false); // Default closed on mobile to save space? Or user said "At Top"
+  const [isMobileCategoryOpen, setIsMobileCategoryOpen] = useState(false); // 移动端默认关闭分类菜单
 
-  // Carousel State
+  // 轮播图状态
   const [currentSlide, setCurrentSlide] = useState(0);
 
   useEffect(() => {
     if (categoryIdFilter) {
         setActiveCategoryId(categoryIdFilter);
-        // Auto expand parent if selected is child
-        const cat = categories.find(c => c.id === categoryIdFilter);
+        // 如果选中的是子分类，自动展开父分类
+        // 注意：这里使用 String() 转换进行比较，确保类型安全
+        const cat = categories.find(c => String(c.id) === categoryIdFilter);
         if (cat && cat.parentId) {
-            setExpandedCategories(prev => new Set(prev).add(cat.parentId!));
+            setExpandedCategories(prev => new Set(prev).add(String(cat.parentId!)));
         }
-        setIsMobileCategoryOpen(true); // Auto open if filtered
+        setIsMobileCategoryOpen(true); // 如果有筛选，自动打开移动端菜单
     } else {
         setActiveCategoryId(null);
     }
-    setCurrentPage(1); // Reset page on filter change
+    setCurrentPage(1); // 筛选改变时重置页码
   }, [categoryIdFilter, categories]);
 
-  // Toggle category expansion
+  // 切换分类展开/折叠
   const toggleExpand = (id: string, e: React.MouseEvent) => {
       e.preventDefault();
       e.stopPropagation();
@@ -50,15 +51,23 @@ export const Home: React.FC<HomeProps> = ({ posts, categories }) => {
       setExpandedCategories(newSet);
   };
 
-  const getCategoryName = (id: string) => categories.find(c => c.id === id)?.name || '未知分类';
+  const getCategoryName = (id: string) => categories.find(c => String(c.id) === String(id))?.name || '未知分类';
 
   const filteredPosts = useMemo(() => {
     return posts.filter(post => {
-      // Category logic: include if exact match OR if post's category is child of selected category
+      // 分类逻辑：包含精确匹配 OR 如果文章分类是选中分类的子分类
       let matchesCategory = true;
       if (activeCategoryId) {
-        const isDirectMatch = post.categoryId === activeCategoryId;
-        const isChildMatch = categories.find(c => c.id === post.categoryId)?.parentId === activeCategoryId;
+        // 统一转换为字符串进行比较
+        const postCatId = String(post.categoryId);
+        const activeId = String(activeCategoryId);
+        
+        const isDirectMatch = postCatId === activeId;
+        
+        // 查找文章所属分类的父分类 ID
+        const parentId = categories.find(c => String(c.id) === postCatId)?.parentId;
+        const isChildMatch = parentId ? String(parentId) === activeId : false;
+        
         matchesCategory = isDirectMatch || isChildMatch;
       }
 
@@ -72,13 +81,13 @@ export const Home: React.FC<HomeProps> = ({ posts, categories }) => {
     });
   }, [posts, activeCategoryId, searchQuery, tagFilter, categories]);
 
-  // Pagination Logic
+  // 分页逻辑
   const totalPages = Math.ceil(filteredPosts.length / ITEMS_PER_PAGE);
   const paginatedPosts = filteredPosts.slice((currentPage - 1) * ITEMS_PER_PAGE, currentPage * ITEMS_PER_PAGE);
 
   const featuredPosts = useMemo(() => posts.filter(p => p.isFeatured), [posts]);
 
-  // Carousel Auto-play
+  // 轮播图自动播放
   useEffect(() => {
     if (featuredPosts.length <= 1) return;
     const timer = setInterval(() => {
@@ -114,23 +123,30 @@ export const Home: React.FC<HomeProps> = ({ posts, categories }) => {
     setSearchParams(newParams);
   }
 
-  // Category Tree Renderer
+  // 递归渲染分类树
   const renderCategoryTree = (parentId: string | null = null, level = 0) => {
-      const cats = categories.filter(c => c.parentId === parentId);
+      // 查找当前层级的分类（parentId 匹配）
+      // 注意：parentId 为 null 时，查找顶级分类
+      const cats = categories.filter(c => {
+          if (parentId === null) return c.parentId === null;
+          return String(c.parentId) === String(parentId);
+      });
+      
       if (cats.length === 0) return null;
 
       return (
           <ul className={`space-y-1 ${level > 0 ? 'ml-4 border-l border-slate-200 dark:border-slate-800 pl-2' : ''}`}>
               {cats.map(cat => {
-                  const hasChildren = categories.some(c => c.parentId === cat.id);
-                  const isExpanded = expandedCategories.has(cat.id);
-                  const isActive = activeCategoryId === cat.id;
+                  const catIdStr = String(cat.id);
+                  const hasChildren = categories.some(c => String(c.parentId) === catIdStr);
+                  const isExpanded = expandedCategories.has(catIdStr);
+                  const isActive = activeCategoryId === catIdStr;
 
                   return (
                       <li key={cat.id}>
                           <div className={`flex items-center justify-between group rounded-lg px-2 py-1.5 transition-colors ${isActive ? 'bg-primary-50 dark:bg-primary-900/30 text-primary-700 dark:text-primary-300 font-bold' : 'text-slate-600 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800'}`}>
                               <button 
-                                onClick={() => handleCategoryClick(cat.id)}
+                                onClick={() => handleCategoryClick(catIdStr)}
                                 className="flex-grow text-left text-sm flex items-center gap-2"
                               >
                                   {hasChildren ? (
@@ -141,12 +157,12 @@ export const Home: React.FC<HomeProps> = ({ posts, categories }) => {
                                   {cat.name}
                               </button>
                               {hasChildren && (
-                                  <button onClick={(e) => toggleExpand(cat.id, e)} className="p-1 rounded hover:bg-slate-200 dark:hover:bg-slate-700">
+                                  <button onClick={(e) => toggleExpand(catIdStr, e)} className="p-1 rounded hover:bg-slate-200 dark:hover:bg-slate-700">
                                       <ChevronDown className={`w-3 h-3 transition-transform ${isExpanded ? 'rotate-180' : ''}`} />
                                   </button>
                               )}
                           </div>
-                          {hasChildren && isExpanded && renderCategoryTree(cat.id, level + 1)}
+                          {hasChildren && isExpanded && renderCategoryTree(catIdStr, level + 1)}
                       </li>
                   );
               })}

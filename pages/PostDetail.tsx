@@ -26,10 +26,15 @@ export const PostDetail: React.FC<PostDetailProps> = ({ posts, updatePost, categ
   const fontClasses = ['prose-lg', 'prose-xl', 'prose-2xl'];
 
   useEffect(() => {
-    const found = posts.find(p => p.id === id);
+    // --- 修复: 使用非严格相等 (==) 来比较数字 ID 和 URL 中的字符串 ID ---
+    // 因为后端现在返回数字 ID，而 URL 参数总是字符串
+    const found = posts.find(p => p.id == id); 
     if (found) {
       setPost(found);
     } else {
+      // 如果没找到，可能是因为 posts 数组还没更新。
+      // 更健壮的方案是直接从 API 获取文章。
+      // 目前我们先跳转回首页。
       navigate('/');
     }
   }, [id, posts, navigate]);
@@ -54,8 +59,10 @@ export const PostDetail: React.FC<PostDetailProps> = ({ posts, updatePost, categ
   const increaseFont = () => setFontSizeLevel(prev => Math.min(prev + 1, 2));
   const decreaseFont = () => setFontSizeLevel(prev => Math.max(prev - 1, 0));
 
-  const categoryName = categories?.find(c => c.id === post.categoryId)?.name || '未分类';
-
+  // 后端现在保证返回字符串 ID，所以我们可以使用严格相等。
+  // 但为了保险起见，或者如果 categories 还没加载完，我们做个防御性检查。
+  const categoryName = categories?.find(c => String(c.id) === String(post.categoryId))?.name || '未分类';
+  
   return (
     <div className="max-w-4xl mx-auto">
       <div className="flex flex-wrap gap-4 justify-between items-center mb-6">

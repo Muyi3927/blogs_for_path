@@ -35,19 +35,21 @@ const checkAuth = (c: any) => {
   return true;
 };
 
-// --- Routes ---
+// --- 路由 ---
 
-// 1. Get All Posts
+// 1. 获取所有文章
 app.get('/api/posts', async (c) => {
   try {
-    // D1: Select all posts
+    // D1: 查询 posts 表，按创建时间倒序排序
     const { results } = await c.env.DB.prepare(
       `SELECT * FROM posts ORDER BY createdAt DESC`
     ).all();
     
-    // Transform data format to match frontend BlogPost interface
+    // 格式化从数据库取出的数据，以匹配前端 BlogPost 接口
     const posts = results.map((p: any) => ({
       ...p,
+      // --- 修复: 确保 categoryId 是字符串，避免前端类型不匹配 ---
+      categoryId: p.categoryId ? String(p.categoryId) : null,
       tags: p.tags ? JSON.parse(p.tags) : [],
       isFeatured: Boolean(p.isFeatured),
       author: { username: p.authorName || 'Admin', role: 'ADMIN' } 
@@ -60,7 +62,7 @@ app.get('/api/posts', async (c) => {
   }
 });
 
-// 2. Get Single Post
+// 2. 获取单篇文章
 app.get('/api/posts/:id', async (c) => {
   const id = c.req.param('id');
   try {
@@ -81,40 +83,49 @@ app.get('/api/posts/:id', async (c) => {
   }
 });
 
-// 3. Create/Update Post (Protected)
-app.post('/api/posts', async (c) => {
+// 3. 创建或更新文章 (受保护的路由)
+app.post('/api/posts', async (c: any) => {
   if (!checkAuth(c)) return c.json({ error: 'Unauthorized' }, 401);
 
   try {
     const body = await c.req.json();
+    // 前端传来的 ID 可能是新文章的 UUID (如果前端生成) 或旧文章的数字 ID
     const { id, title, excerpt, content, coverImage, categoryId, tags, isFeatured, audioUrl, author } = body;
     
     const now = Date.now();
     const tagString = JSON.stringify(tags || []);
 
-    // Check if post exists
-    const existing = await c.env.DB.prepare('SELECT id FROM posts WHERE id = ?').bind(id).first();
+    // --- 检查文章是否存在 ---
+    const existing = id ? await c.env.DB.prepare('SELECT id FROM posts WHERE id = ?').bind(id).first() : null;
 
     if (existing) {
+        // --- 更新现有文章 ---
         await c.env.DB.prepare(`
             UPDATE posts SET title=?, excerpt=?, content=?, coverImage=?, updatedAt=?, categoryId=?, tags=?, isFeatured=?, audioUrl=?
             WHERE id=?
         `).bind(title, excerpt, content, coverImage, now, categoryId, tagString, isFeatured ? 1 : 0, audioUrl, id).run();
+        
+        return c.json({ success: true, id: id });
+
     } else {
-        await c.env.DB.prepare(`
-            INSERT INTO posts (id, title, excerpt, content, coverImage, createdAt, updatedAt, categoryId, tags, isFeatured, audioUrl, authorName)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-        `).bind(id, title, excerpt, content, coverImage, now, now, categoryId, tagString, isFeatured ? 1 : 0, audioUrl, author?.username || 'Admin').run();
+        // --- 插入新文章 (让数据库自动生成自增 ID) ---
+        const result = await c.env.DB.prepare(`
+            INSERT INTO posts (title, excerpt, content, coverImage, createdAt, updatedAt, categoryId, tags, isFeatured, audioUrl, authorName)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        `).bind(title, excerpt, content, coverImage, now, now, categoryId, tagString, isFeatured ? 1 : 0, audioUrl, author?.username || 'Admin').run();
+
+        const newId = result.meta.last_row_id;
+        
+        return c.json({ success: true, id: newId });
     }
 
-    return c.json({ success: true, id });
   } catch (e: any) {
     console.error("Save Error:", e);
     return c.json({ error: e.message }, 500);
   }
 });
 
-// 4. Upload File to R2 (Protected) - 自动分文件夹
+// 4. 上传文件到 R2 (受保护的路由) - 自动分文件夹
 app.put('/api/upload', async (c) => {
   if (!checkAuth(c)) return c.json({ error: 'Unauthorized' }, 401);
 
@@ -126,7 +137,7 @@ app.put('/api/upload', async (c) => {
       return c.json({ error: 'No file uploaded' }, 400);
     }
 
-    // === 新增：根据文件类型自动决定文件夹 ===
+    // === 根据文件类型自动决定文件夹 ===
     const ext = file.name.split('.').pop()?.toLowerCase() || '';
     const audioExts = ['mp3', 'wav', 'ogg', 'm4a', 'aac', 'flac', 'webm'];
     const imageExts = ['jpg', 'jpeg', 'png', 'gif', 'webp', 'svg', 'bmp'];
@@ -165,13 +176,78 @@ app.put('/api/upload', async (c) => {
   }
 });
 
-// 5. Get Categories
+// 5. 获取所有分类
 app.get('/api/categories', async (c) => {
   try {
     const { results } = await c.env.DB.prepare('SELECT * FROM categories').all();
-    return c.json(results);
+    // --- 修复: 确保所有分类 ID 都是字符串 ---
+    const stringifiedResults = results.map((cat: any) => ({
+        ...cat,
+        id: String(cat.id),
+        parentId: cat.parentId ? String(cat.parentId) : null
+    }));
+    return c.json(stringifiedResults);
   } catch (e: any) {
     return c.json({ error: e.message }, 500);
+  }
+});
+
+// 6. 创建分类 (受保护的路由)
+app.post('/api/categories', async (c: any) => {
+  if (!checkAuth(c)) return c.json({ error: 'Unauthorized' }, 401);
+
+  try {
+    const body = await c.req.json();
+    const name = body.name;
+    const parentId = body.parentId ?? null;
+
+    if (!name) return c.json({ error: 'Missing name' }, 400);
+
+    // --- 修复: 让 D1 处理自增 ID ---
+    // 我们不再在 INSERT 语句中提供 ID。
+    const result = await c.env.DB.prepare(
+        `INSERT INTO categories (name, parentId) VALUES (?, ?)`
+      )
+      .bind(name, parentId)
+      .run();
+
+    // 获取数据库刚刚生成的 ID。
+    const newId = result.meta.last_row_id;
+
+    return c.json({ success: true, category: { id: newId, name, parentId } });
+  } catch (e: any) {
+    console.error('Create category error:', e);
+    return c.json({ error: e.message || String(e) }, 500);
+  }
+});
+
+// 7. 删除分类 (受保护的路由)
+app.delete('/api/categories/:id', async (c: any) => {
+  if (!checkAuth(c)) return c.json({ error: 'Unauthorized' }, 401);
+
+  const id = c.req.param('id');
+  try {
+    // 删除分类
+    await c.env.DB.prepare('DELETE FROM categories WHERE id = ?').bind(id).run();
+
+    // 如果有文章引用了这个分类，将其设为未分类
+    try {
+      await c.env.DB.prepare('UPDATE posts SET categoryId = ? WHERE categoryId = ?').bind('', id).run();
+    } catch (e) {
+      console.warn('Failed to update posts when deleting category:', e);
+    }
+
+    // 如果有子分类引用了这个分类，将其设为顶级分类 (parentId = NULL)
+    try {
+      await c.env.DB.prepare('UPDATE categories SET parentId = NULL WHERE parentId = ?').bind(id).run();
+    } catch (e) {
+      // ignore if parentId column doesn't exist
+    }
+
+    return c.json({ success: true });
+  } catch (e: any) {
+    console.error('Delete category error:', e);
+    return c.json({ error: e.message || String(e) }, 500);
   }
 });
 
