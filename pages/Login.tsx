@@ -15,6 +15,8 @@ export const Login: React.FC = () => {
     
     // Hardcoded credentials as requested
     if (username === 'admin' && password === 'fwgd3927') {
+       // 存储 Token (密码) 到 localStorage，供 api.ts 使用
+       localStorage.setItem('authToken', password);
        login('Admin', UserRole.ADMIN);
        navigate('/');
     } else {

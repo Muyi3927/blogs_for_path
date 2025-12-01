@@ -11,13 +11,13 @@ export interface User {
 }
 
 export interface Category {
-  id: string;
+  id: number;
   name: string;
-  parentId: string | null;
+  parentId: number | null;
 }
 
 export interface BlogPost {
-  id: string;
+  id: number;
   title: string;
   excerpt: string;
   content: string; // Markdown
@@ -25,7 +25,7 @@ export interface BlogPost {
   author: User;
   createdAt: number;
   updatedAt?: number;
-  categoryId: string; // Links to Category.id
+  categoryId: number; // Links to Category.id
   tags: string[];
   views: number;
   isFeatured?: boolean;

@@ -7,7 +7,7 @@ import { Editor } from './pages/Editor';
 import { Login } from './pages/Login';
 import { About } from './pages/About';
 import { ThemeContextType, AuthContextType, User, UserRole, BlogPost, Category } from './types';
-import { api } from './services/api';
+import { getPosts, getCategories, createCategory, deleteCategory as apiDeleteCategory, deletePost } from './services/api';
 
 // Contexts
 export const ThemeContext = createContext<ThemeContextType>({
@@ -51,8 +51,8 @@ const App: React.FC = () => {
     const loadData = async () => {
       try {
         const [fetchedPosts, fetchedCategories] = await Promise.all([
-          api.getPosts(),
-          api.getCategories()
+          getPosts(),
+          getCategories()
         ]);
         
         // 仅当获取到有效数据时更新状态
@@ -71,7 +71,7 @@ const App: React.FC = () => {
 
   const login = (username: string, role: UserRole) => {
     setUser({
-      id: Date.now().toString(),
+      id: Date.now().toString(), // 使用 string ID
       username,
       role,
       avatarUrl: `https://ui-avatars.com/api/?name=${username}&background=random`
@@ -89,30 +89,17 @@ const App: React.FC = () => {
     }
   };
 
-  const addCategory = (name: string, parentId: string | null) => {
-    // 乐观更新：先在 UI 上添加分类，然后持久化到后端
-    const tempId = `c${Date.now()}`;
-    const newCat: Category = { id: tempId, name, parentId };
-    setCategories(prev => [...prev, newCat]);
-
-    (async () => {
-      try {
-        const resp: any = await api.createCategory(name, parentId);
-        // 后端可能返回 { success: true, category: { id, name, parentId } }
-        const created = resp.category || resp;
-        if (created && created.id) {
-          // 用后端返回的真实 ID 替换临时 ID
-          setCategories(prev => prev.map(c => c.id === tempId ? { ...c, id: created.id, name: created.name, parentId: created.parentId } : c));
-        }
-      } catch (e) {
-        console.error('在服务器上创建分类失败，保留本地副本:', e);
-        // 可选：提醒用户
-        alert('无法保存分类到后端，已在本地显示。请检查后端部署或网络。');
-      }
-    })();
+  const addCategory = async (name: string, parentId: number | null) => {
+    try {
+      const newCat = await createCategory({ name, parentId: parentId ?? undefined });
+      setCategories(prev => [...prev, newCat]);
+    } catch (e) {
+      console.error('在服务器上创建分类失败:', e);
+      alert('无法保存分类到后端，请检查后端部署或网络。');
+    }
   };
 
-  const deleteCategory = (id: string) => {
+  const deleteCategory = (id: number) => {
     const categoryToDelete = categories.find(c => c.id === id);
     if (!categoryToDelete) return;
 
@@ -130,24 +117,24 @@ const App: React.FC = () => {
     }
 
     if (!window.confirm(warning)) return;
-    // 保留备份以便回滚
+    
     const prevCategories = categories;
     const prevPosts = posts;
 
-    // 更新与此分类关联的文章，使其变为无分类（或在 UI 中处理为“未分类”）
+    // 乐观更新
     if (affectedPostsCount > 0) {
-        setPosts(prev => prev.map(p => p.categoryId === id ? { ...p, categoryId: '' } : p));
+        // 如果分类被删除，将文章归类为 ID 0 (未分类)
+        setPosts(prev => prev.map(p => p.categoryId === id ? { ...p, categoryId: 0 } : p));
     }
-
-    // 乐观更新：在 UI 中更新分类
     setCategories(prev => {
       const filtered = prev.filter(c => c.id !== id);
+      // 如果父分类被删除，子分类变为顶级分类 (parentId: null)
       return filtered.map(c => c.parentId === id ? { ...c, parentId: null } : c);
     });
 
     (async () => {
       try {
-        await api.deleteCategory(id);
+        await apiDeleteCategory(id);
       } catch (e) {
         console.error('在服务器上删除分类失败:', e);
         alert('无法删除后端分类，已恢复本地数据。');
@@ -158,8 +145,21 @@ const App: React.FC = () => {
     })();
   };
 
-  const updatePost = (updatedPost: BlogPost) => {
+  const updatePostInState = (updatedPost: BlogPost) => {
       setPosts(posts.map(p => p.id === updatedPost.id ? updatedPost : p));
+  };
+
+  const handleDeletePost = async (id: number) => {
+    if (!window.confirm('确定要删除这篇文章吗？此操作不可恢复。')) return;
+    try {
+      await deletePost(id);
+      setPosts(prev => prev.filter(p => p.id !== id));
+      return true;
+    } catch (e) {
+      console.error('删除文章失败:', e);
+      alert('删除失败，请重试。');
+      return false;
+    }
   };
 
   if (loading) {
@@ -184,7 +184,7 @@ const App: React.FC = () => {
             <Routes>
               <Route path="/" element={<Home posts={posts} categories={categories} />} />
               <Route path="/about" element={<About />} />
-              <Route path="/post/:id" element={<PostDetail posts={posts} updatePost={updatePost} categories={categories} />} />
+              <Route path="/post/:id" element={<PostDetail posts={posts} updatePost={updatePostInState} onDeletePost={handleDeletePost} categories={categories} />} />
               <Route path="/login" element={<Login />} />
               <Route 
                 path="/editor" 

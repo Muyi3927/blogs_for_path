@@ -17,8 +17,8 @@ export const Home: React.FC<HomeProps> = ({ posts, categories }) => {
   const tagFilter = searchParams.get('tag');
   const searchQuery = searchParams.get('search');
   
-  const [activeCategoryId, setActiveCategoryId] = useState<string | null>(null);
-  const [expandedCategories, setExpandedCategories] = useState<Set<string>>(new Set());
+  const [activeCategoryId, setActiveCategoryId] = useState<number | null>(null);
+  const [expandedCategories, setExpandedCategories] = useState<Set<number>>(new Set());
   const [currentPage, setCurrentPage] = useState(1);
   const [isMobileCategoryOpen, setIsMobileCategoryOpen] = useState(false); // 移动端默认关闭分类菜单
 
@@ -26,13 +26,13 @@ export const Home: React.FC<HomeProps> = ({ posts, categories }) => {
   const [currentSlide, setCurrentSlide] = useState(0);
 
   useEffect(() => {
-    if (categoryIdFilter) {
-        setActiveCategoryId(categoryIdFilter);
+    const categoryIdNum = categoryIdFilter ? parseInt(categoryIdFilter, 10) : null;
+    if (categoryIdNum) {
+        setActiveCategoryId(categoryIdNum);
         // 如果选中的是子分类，自动展开父分类
-        // 注意：这里使用 String() 转换进行比较，确保类型安全
-        const cat = categories.find(c => String(c.id) === categoryIdFilter);
+        const cat = categories.find((c) => c.id === categoryIdNum);
         if (cat && cat.parentId) {
-            setExpandedCategories(prev => new Set(prev).add(String(cat.parentId!)));
+            setExpandedCategories(prev => new Set(prev).add(cat.parentId!));
         }
         setIsMobileCategoryOpen(true); // 如果有筛选，自动打开移动端菜单
     } else {
@@ -42,7 +42,7 @@ export const Home: React.FC<HomeProps> = ({ posts, categories }) => {
   }, [categoryIdFilter, categories]);
 
   // 切换分类展开/折叠
-  const toggleExpand = (id: string, e: React.MouseEvent) => {
+  const toggleExpand = (id: number, e: React.MouseEvent) => {
       e.preventDefault();
       e.stopPropagation();
       const newSet = new Set(expandedCategories);
@@ -51,22 +51,18 @@ export const Home: React.FC<HomeProps> = ({ posts, categories }) => {
       setExpandedCategories(newSet);
   };
 
-  const getCategoryName = (id: string) => categories.find(c => String(c.id) === String(id))?.name || '未知分类';
+  const getCategoryName = (id: number) => categories.find((c) => c.id === id)?.name || '未知分类';
 
   const filteredPosts = useMemo(() => {
-    return posts.filter(post => {
+    return posts.filter((post) => {
       // 分类逻辑：包含精确匹配 OR 如果文章分类是选中分类的子分类
       let matchesCategory = true;
-      if (activeCategoryId) {
-        // 统一转换为字符串进行比较
-        const postCatId = String(post.categoryId);
-        const activeId = String(activeCategoryId);
-        
-        const isDirectMatch = postCatId === activeId;
+      if (activeCategoryId !== null) {
+        const isDirectMatch = post.categoryId === activeCategoryId;
         
         // 查找文章所属分类的父分类 ID
-        const parentId = categories.find(c => String(c.id) === postCatId)?.parentId;
-        const isChildMatch = parentId ? String(parentId) === activeId : false;
+        const parentId = categories.find((c) => c.id === post.categoryId)?.parentId;
+        const isChildMatch = parentId ? parentId === activeCategoryId : false;
         
         matchesCategory = isDirectMatch || isChildMatch;
       }
@@ -75,7 +71,7 @@ export const Home: React.FC<HomeProps> = ({ posts, categories }) => {
       const matchesSearch = searchQuery 
         ? post.title.toLowerCase().includes(searchQuery.toLowerCase()) || 
           post.excerpt.toLowerCase().includes(searchQuery.toLowerCase()) ||
-          post.tags.some(tag => tag.toLowerCase().includes(searchQuery.toLowerCase()))
+          post.tags.some((tag) => tag.toLowerCase().includes(searchQuery.toLowerCase()))
         : true;
       return matchesCategory && matchesSearch && matchesTag;
     });
@@ -85,7 +81,7 @@ export const Home: React.FC<HomeProps> = ({ posts, categories }) => {
   const totalPages = Math.ceil(filteredPosts.length / ITEMS_PER_PAGE);
   const paginatedPosts = filteredPosts.slice((currentPage - 1) * ITEMS_PER_PAGE, currentPage * ITEMS_PER_PAGE);
 
-  const featuredPosts = useMemo(() => posts.filter(p => p.isFeatured), [posts]);
+  const featuredPosts = useMemo(() => posts.filter((p) => p.isFeatured), [posts]);
 
   // 轮播图自动播放
   useEffect(() => {
@@ -106,13 +102,13 @@ export const Home: React.FC<HomeProps> = ({ posts, categories }) => {
       setCurrentSlide((prev) => (prev - 1 + featuredPosts.length) % featuredPosts.length);
   };
 
-  const handleCategoryClick = (id: string | null) => {
+  const handleCategoryClick = (id: number | null) => {
     setActiveCategoryId(id);
     const newParams = new URLSearchParams(searchParams);
-    if (!id) {
+    if (id === null) {
       newParams.delete('category');
     } else {
-      newParams.set('category', id);
+      newParams.set('category', String(id));
     }
     setSearchParams(newParams);
   };
@@ -124,29 +120,24 @@ export const Home: React.FC<HomeProps> = ({ posts, categories }) => {
   }
 
   // 递归渲染分类树
-  const renderCategoryTree = (parentId: string | null = null, level = 0) => {
+  const renderCategoryTree = (parentId: number | null = null, level = 0) => {
       // 查找当前层级的分类（parentId 匹配）
-      // 注意：parentId 为 null 时，查找顶级分类
-      const cats = categories.filter(c => {
-          if (parentId === null) return c.parentId === null;
-          return String(c.parentId) === String(parentId);
-      });
+      const cats = categories.filter((c) => c.parentId === parentId);
       
       if (cats.length === 0) return null;
 
       return (
           <ul className={`space-y-1 ${level > 0 ? 'ml-4 border-l border-slate-200 dark:border-slate-800 pl-2' : ''}`}>
-              {cats.map(cat => {
-                  const catIdStr = String(cat.id);
-                  const hasChildren = categories.some(c => String(c.parentId) === catIdStr);
-                  const isExpanded = expandedCategories.has(catIdStr);
-                  const isActive = activeCategoryId === catIdStr;
+              {cats.map((cat) => {
+                  const hasChildren = categories.some((c) => c.parentId === cat.id);
+                  const isExpanded = expandedCategories.has(cat.id);
+                  const isActive = activeCategoryId === cat.id;
 
                   return (
                       <li key={cat.id}>
                           <div className={`flex items-center justify-between group rounded-lg px-2 py-1.5 transition-colors ${isActive ? 'bg-primary-50 dark:bg-primary-900/30 text-primary-700 dark:text-primary-300 font-bold' : 'text-slate-600 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800'}`}>
                               <button 
-                                onClick={() => handleCategoryClick(catIdStr)}
+                                onClick={() => handleCategoryClick(cat.id)}
                                 className="flex-grow text-left text-sm flex items-center gap-2"
                               >
                                   {hasChildren ? (
@@ -157,12 +148,12 @@ export const Home: React.FC<HomeProps> = ({ posts, categories }) => {
                                   {cat.name}
                               </button>
                               {hasChildren && (
-                                  <button onClick={(e) => toggleExpand(catIdStr, e)} className="p-1 rounded hover:bg-slate-200 dark:hover:bg-slate-700">
+                                  <button onClick={(e) => toggleExpand(cat.id, e)} className="p-1 rounded hover:bg-slate-200 dark:hover:bg-slate-700">
                                       <ChevronDown className={`w-3 h-3 transition-transform ${isExpanded ? 'rotate-180' : ''}`} />
                                   </button>
                               )}
                           </div>
-                          {hasChildren && isExpanded && renderCategoryTree(catIdStr, level + 1)}
+                          {hasChildren && isExpanded && renderCategoryTree(cat.id, level + 1)}
                       </li>
                   );
               })}
@@ -261,7 +252,7 @@ export const Home: React.FC<HomeProps> = ({ posts, categories }) => {
                       <div className="mt-8 pt-6 border-t border-slate-100 dark:border-slate-800">
                           <h3 className="font-bold text-sm mb-4 text-slate-500 uppercase tracking-wider">热门标签</h3>
                           <div className="flex flex-wrap gap-2">
-                             {Array.from(new Set(posts.flatMap(p => p.tags))).slice(0, 8).map(tag => (
+                             {Array.from(new Set(posts.flatMap((p) => p.tags))).slice(0, 8).map((tag) => (
                                  <Link key={tag} to={`/?tag=${tag}`} className="text-xs bg-slate-100 dark:bg-slate-800 px-2 py-1 rounded text-slate-600 hover:text-primary-600">
                                     #{tag}
                                  </Link>
@@ -303,7 +294,7 @@ export const Home: React.FC<HomeProps> = ({ posts, categories }) => {
                 </div>
               ) : (
                 <div className="space-y-4 md:space-y-6">
-                  {paginatedPosts.map(post => (
+                  {paginatedPosts.map((post) => (
                     <article key={post.id} className="group bg-white dark:bg-slate-900 rounded-2xl overflow-hidden border border-slate-100 dark:border-slate-800 shadow-sm hover:shadow-lg transition-all duration-300 flex flex-col md:flex-row md:h-56">
                       <Link to={`/post/${post.id}`} className="block relative overflow-hidden w-full md:w-1/3 h-40 md:h-full flex-shrink-0">
                         <img src={post.coverImage} alt={post.title} className="w-full h-full object-cover transition-transform duration-500 group-hover:scale-110" />
@@ -328,7 +319,7 @@ export const Home: React.FC<HomeProps> = ({ posts, categories }) => {
                          </div>
                          <div className="flex items-center justify-between mt-auto">
                             <div className="flex gap-2 flex-wrap overflow-hidden h-5 md:h-6">
-                              {post.tags.slice(0, 3).map(tag => (
+                              {post.tags.slice(0, 3).map((tag) => (
                                 <Link 
                                   key={tag} 
                                   to={`/?tag=${tag}`}

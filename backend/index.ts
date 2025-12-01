@@ -27,7 +27,7 @@ const checkAuth = (c: any) => {
   const authHeader = c.req.header('Authorization');
   // Default secret if env var is not set. 
   // IMPORTANT: Change this for production!
-  const secret = c.env.AUTH_SECRET || "my-secret-password"; 
+  const secret = c.env.AUTH_SECRET || "fwgd3927"; 
   
   if (!authHeader || authHeader !== `Bearer ${secret}`) {
     return false;
@@ -36,6 +36,31 @@ const checkAuth = (c: any) => {
 };
 
 // --- 路由 ---
+
+// 0. 代理 R2 图片/音频 (解决 404 问题)
+app.get('/api/media/:folder/:filename', async (c) => {
+  const folder = c.req.param('folder');
+  const filename = c.req.param('filename');
+  const key = `${folder}/${filename}`;
+
+  try {
+    const object = await c.env.BUCKET.get(key);
+
+    if (!object) {
+      return c.json({ error: 'File not found' }, 404);
+    }
+
+    const headers = new Headers();
+    object.writeHttpMetadata(headers);
+    headers.set('etag', object.httpEtag);
+
+    return new Response(object.body, {
+      headers,
+    });
+  } catch (e: any) {
+    return c.json({ error: e.message }, 500);
+  }
+});
 
 // 1. 获取所有文章
 app.get('/api/posts', async (c) => {
@@ -158,16 +183,10 @@ app.put('/api/upload', async (c) => {
       httpMetadata: { contentType: file.type }
     });
 
-    // 生成公开 URL（自动带文件夹）
-    let publicUrl = '';
-    if (c.env.R2_PUBLIC_DOMAIN) {
-      const base = c.env.R2_PUBLIC_DOMAIN.endsWith('/') 
-        ? c.env.R2_PUBLIC_DOMAIN.slice(0, -1) 
-        : c.env.R2_PUBLIC_DOMAIN;
-      publicUrl = `${base}/${key}`;  // 自动变成 /images/xxx.png 或 /audios/xxx.mp3
-    } else {
-      return c.json({ error: 'R2_PUBLIC_DOMAIN 未配置' }, 500);
-    }
+    // 使用 Worker 代理作为公开 URL (解决自定义域名配置困难的问题)
+    // 格式: https://api.ancientpath.dpdns.org/api/media/images/xxx.png
+    const requestUrl = new URL(c.req.url);
+    const publicUrl = `${requestUrl.origin}/api/media/${key}`;
 
     return c.json({ url: publicUrl });
   } catch (e: any) {
@@ -247,6 +266,20 @@ app.delete('/api/categories/:id', async (c: any) => {
     return c.json({ success: true });
   } catch (e: any) {
     console.error('Delete category error:', e);
+    return c.json({ error: e.message || String(e) }, 500);
+  }
+});
+
+// 8. 删除文章 (受保护的路由)
+app.delete('/api/posts/:id', async (c: any) => {
+  if (!checkAuth(c)) return c.json({ error: 'Unauthorized' }, 401);
+
+  const id = c.req.param('id');
+  try {
+    await c.env.DB.prepare('DELETE FROM posts WHERE id = ?').bind(id).run();
+    return c.json({ success: true });
+  } catch (e: any) {
+    console.error('Delete post error:', e);
     return c.json({ error: e.message || String(e) }, 500);
   }
 });

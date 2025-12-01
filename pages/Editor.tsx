@@ -4,25 +4,26 @@ import { AuthContext } from '../App';
 import { BlogPost, Category } from '../types';
 import { Save, Eye, Edit3, X, ArrowLeft, Tag as TagIcon, Image as ImageIcon, Star, Mic, Trash2, Settings, Upload, Loader2 } from 'lucide-react';
 import MarkdownRenderer from '../components/MarkdownRenderer';
-import { api } from '../services/api';
+import { getPosts, getPostById, getCategories, createPost, updatePost, deletePost, createCategory, deleteCategory, uploadFile } from '../services/api';
 
 interface EditorProps {
   onSave: (post: BlogPost) => void;
   categories: Category[];
-  onAddCategory: (name: string, parentId: string | null) => void;
-  onDeleteCategory: (id: string) => void;
+  onAddCategory: (name: string, parentId: number | null) => void;
+  onDeleteCategory: (id: number) => void;
   posts: BlogPost[];
 }
 
 export const Editor: React.FC<EditorProps> = ({ onSave, categories, onAddCategory, onDeleteCategory, posts }) => {
   const navigate = useNavigate();
-  const { id } = useParams<{ id: string }>();
+  const { id: idString } = useParams<{ id: string }>();
+  const id = idString ? Number(idString) : undefined;
   const { user, isAdmin } = useContext(AuthContext);
   
   const [title, setTitle] = useState('');
   const [content, setContent] = useState('');
   const [excerpt, setExcerpt] = useState('');
-  const [categoryId, setCategoryId] = useState<string>('');
+  const [categoryId, setCategoryId] = useState<number | undefined>(undefined);
   const [currentTags, setCurrentTags] = useState<string[]>([]);
   const [tagInput, setTagInput] = useState('');
   
@@ -38,7 +39,7 @@ export const Editor: React.FC<EditorProps> = ({ onSave, categories, onAddCategor
   // Category Creation/Management State
   const [isManagingCategory, setIsManagingCategory] = useState(false);
   const [newCategoryName, setNewCategoryName] = useState('');
-  const [newCategoryParent, setNewCategoryParent] = useState<string>(''); // empty string = root
+  const [newCategoryParent, setNewCategoryParent] = useState<number | ''>(''); // empty string = root
 
   // Refs for file inputs
   const imageInputRef = useRef<HTMLInputElement>(null);
@@ -80,25 +81,21 @@ export const Editor: React.FC<EditorProps> = ({ onSave, categories, onAddCategor
     const file = e.target.files?.[0];
     if (!file) return;
 
-    // In production, use a real secret or token from AuthContext
-    const token = "my-secret-password"; 
-
     try {
       if (type === 'image') setUploadingImage(true);
       else setUploadingAudio(true);
 
-      const uploadedUrl = await api.uploadFile(file, token);
+      const publicUrl = await uploadFile(file);
 
-      if (type === 'image') setCoverImage(uploadedUrl);
-      else setAudioUrl(uploadedUrl);
+      if (type === 'image') setCoverImage(publicUrl);
+      else setAudioUrl(publicUrl);
 
     } catch (error) {
-      alert(`上传失败: ${error instanceof Error ? error.message : '未知错误'}\n\n提示: 您需要部署后端 Worker 才能使用上传功能。`);
+      alert(`上传失败: ${error instanceof Error ? error.message : '未知错误'}`);
       console.error(error);
     } finally {
       if (type === 'image') setUploadingImage(false);
       else setUploadingAudio(false);
-      // Reset input
       e.target.value = '';
     }
   };
@@ -123,39 +120,38 @@ export const Editor: React.FC<EditorProps> = ({ onSave, categories, onAddCategor
   };
 
   const handleSave = async () => {
-    if (!title || !content) return alert("标题和内容不能为空");
+    if (!title || !content || categoryId === undefined) return alert("标题、内容和分类不能为空");
     
     setIsSubmitting(true);
     const finalCoverImage = coverImage || `https://picsum.photos/800/400?random=${Math.floor(Math.random()*100)}`;
     const finalExcerpt = excerpt.trim() || (content.substring(0, 100) + '...');
 
-    const newPost: BlogPost = {
-      id: id || crypto.randomUUID(), // Use UUID for API compatibility
+    const postData = {
       title,
       excerpt: finalExcerpt,
       content,
       coverImage: finalCoverImage,
-      author: user,
-      createdAt: id ? (posts.find(p => p.id === id)?.createdAt || Date.now()) : Date.now(),
-      updatedAt: Date.now(),
-      categoryId: categoryId || (categories[0]?.id),
+      categoryId: categoryId,
       tags: currentTags,
-      views: id ? (posts.find(p => p.id === id)?.views || 0) : 0,
       isFeatured,
       audioUrl
     };
 
-    // Try saving to API first
     try {
-       // Note: Ideally we pass the auth token here
-       await api.savePost(newPost, "my-secret-password");
+       let savedPost;
+       if (id) {
+         savedPost = await updatePost(id, postData);
+       } else {
+         savedPost = await createPost(postData);
+       }
+       onSave(savedPost);
+       navigate('/');
     } catch (e) {
-       console.warn("Backend save failed, falling back to local state only", e);
+       console.error("保存失败", e);
+       alert(`保存失败: ${e instanceof Error ? e.message : '未知错误'}`);
+    } finally {
+      setIsSubmitting(false);
     }
-
-    onSave(newPost);
-    setIsSubmitting(false);
-    navigate('/');
   };
 
   const handleAddCategory = () => {
@@ -166,7 +162,7 @@ export const Editor: React.FC<EditorProps> = ({ onSave, categories, onAddCategor
     }
   };
 
-  const handleDeleteCategoryClick = (e: React.MouseEvent, catId: string) => {
+  const handleDeleteCategoryClick = (e: React.MouseEvent, catId: number) => {
     e.preventDefault();
     e.stopPropagation();
     onDeleteCategory(catId);
@@ -302,7 +298,7 @@ export const Editor: React.FC<EditorProps> = ({ onSave, categories, onAddCategor
                             />
                             <select 
                                 value={newCategoryParent} 
-                                onChange={e => setNewCategoryParent(e.target.value)}
+                                onChange={e => setNewCategoryParent(Number(e.target.value) || '')}
                                 className="w-full bg-white dark:bg-slate-700 rounded px-2 py-1.5 text-sm outline-none border border-slate-200 dark:border-slate-600"
                             >
                                 <option value="">(无父分类 - 顶级)</option>
@@ -332,7 +328,7 @@ export const Editor: React.FC<EditorProps> = ({ onSave, categories, onAddCategor
                         <div className="flex items-center gap-2 relative">
                             <select 
                                 value={categoryId} 
-                                onChange={(e) => setCategoryId(e.target.value)}
+                                onChange={(e) => setCategoryId(Number(e.target.value))}
                                 className="bg-slate-100 dark:bg-slate-800 rounded-lg px-3 py-2 text-sm focus:ring-2 focus:ring-primary-500 outline-none flex-grow"
                             >
                                 {categories.map(c => (

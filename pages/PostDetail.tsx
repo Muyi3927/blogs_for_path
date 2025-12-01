@@ -4,15 +4,16 @@ import { format } from 'date-fns';
 import { BlogPost, Category } from '../types';
 import { AuthContext } from '../App';
 import MarkdownRenderer from '../components/MarkdownRenderer';
-import { ArrowLeft, Calendar, User, Share2, Tag, Type, Minus, Plus, Volume2, Edit, Gauge } from 'lucide-react';
+import { ArrowLeft, Calendar, User, Share2, Tag, Type, Minus, Plus, Volume2, Edit, Gauge, Trash2 } from 'lucide-react';
 
 interface PostDetailProps {
   posts: BlogPost[];
   updatePost: (updatedPost: BlogPost) => void;
+  onDeletePost: (id: number) => Promise<boolean | undefined>;
   categories?: Category[];
 }
 
-export const PostDetail: React.FC<PostDetailProps> = ({ posts, updatePost, categories }) => {
+export const PostDetail: React.FC<PostDetailProps> = ({ posts, updatePost, onDeletePost, categories }) => {
   const { id } = useParams<{ id: string }>();
   const navigate = useNavigate();
   const { isAdmin } = useContext(AuthContext);
@@ -28,7 +29,7 @@ export const PostDetail: React.FC<PostDetailProps> = ({ posts, updatePost, categ
   useEffect(() => {
     // --- 修复: 使用非严格相等 (==) 来比较数字 ID 和 URL 中的字符串 ID ---
     // 因为后端现在返回数字 ID，而 URL 参数总是字符串
-    const found = posts.find(p => p.id == id); 
+    const found = posts.find(p => String(p.id) === id); 
     if (found) {
       setPost(found);
     } else {
@@ -59,6 +60,12 @@ export const PostDetail: React.FC<PostDetailProps> = ({ posts, updatePost, categ
   const increaseFont = () => setFontSizeLevel(prev => Math.min(prev + 1, 2));
   const decreaseFont = () => setFontSizeLevel(prev => Math.max(prev - 1, 0));
 
+  const handleDelete = async () => {
+      if (post && await onDeletePost(post.id)) {
+          navigate('/');
+      }
+  };
+
   // 后端现在保证返回字符串 ID，所以我们可以使用严格相等。
   // 但为了保险起见，或者如果 categories 还没加载完，我们做个防御性检查。
   const categoryName = categories?.find(c => String(c.id) === String(post.categoryId))?.name || '未分类';
@@ -71,9 +78,14 @@ export const PostDetail: React.FC<PostDetailProps> = ({ posts, updatePost, categ
                 <ArrowLeft className="w-4 h-4 mr-2" /> 返回列表
             </Link>
             {isAdmin && (
-                <Link to={`/editor/${post.id}`} className="flex items-center text-primary-600 hover:text-primary-700 font-bold text-sm bg-primary-50 dark:bg-primary-900/30 px-3 py-1 rounded-full">
-                    <Edit className="w-3 h-3 mr-1" /> 编辑文章
-                </Link>
+                <div className="flex gap-2">
+                    <Link to={`/editor/${post.id}`} className="flex items-center text-primary-600 hover:text-primary-700 font-bold text-sm bg-primary-50 dark:bg-primary-900/30 px-3 py-1 rounded-full">
+                        <Edit className="w-3 h-3 mr-1" /> 编辑文章
+                    </Link>
+                    <button onClick={handleDelete} className="flex items-center text-red-600 hover:text-red-700 font-bold text-sm bg-red-50 dark:bg-red-900/30 px-3 py-1 rounded-full">
+                        <Trash2 className="w-3 h-3 mr-1" /> 删除文章
+                    </button>
+                </div>
             )}
           </div>
 
