@@ -43,6 +43,11 @@ app.get('/api/media/:folder/:filename', async (c) => {
   const filename = c.req.param('filename');
   const key = `${folder}/${filename}`;
 
+  // 优先使用 R2 公开域名重定向 (支持 Range 请求，支持 CDN 缓存)
+  if (c.env.R2_PUBLIC_DOMAIN) {
+    return c.redirect(`${c.env.R2_PUBLIC_DOMAIN}/${key}`);
+  }
+
   try {
     const object = await c.env.BUCKET.get(key);
 

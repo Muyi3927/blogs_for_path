@@ -1,5 +1,5 @@
-drop table if exists posts;
-drop table if exists categories;
+-- drop table if exists posts;
+-- drop table if exists categories;
 
 -- schema.sql  修改后版本
 

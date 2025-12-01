@@ -7,8 +7,8 @@
     <meta name="description" content="一个传承欧陆改革宗信仰的博客平台" />
     
     <!-- Tailwind CDN is kept for simplicity to avoid complex build config changes, ensuring styles work exactly as you see them now. -->
-    <script src="https://cdn.tailwindcss.com?plugins=typography"></script>
-    <script>
+    <script src="https://cdn.tailwindcss.com?plugins=typography" data-cfasync="false"></script>
+    <script data-cfasync="false">
       tailwind.config = {
         darkMode: 'class',
         theme: {
@@ -31,6 +31,8 @@
                 css: {
                   'code::before': { content: '""' },
                   'code::after': { content: '""' },
+                  'blockquote p:first-of-type::before': { content: 'none' },
+                  'blockquote p:last-of-type::after': { content: 'none' },
                   code: {
                     backgroundColor: theme('colors.slate.200'),
                     padding: '0.2em 0.4em',
@@ -63,6 +65,17 @@
       }
     </script>
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=Merriweather:ital,wght@0,300;0,400;0,700;1,400&display=swap" rel="stylesheet">
+    <style>
+      html {
+        background-color: #f8fafc;
+      }
+      html.dark {
+        background-color: #020617;
+      }
+      strong {
+        font-weight: 700 !important;
+      }
+    </style>
   <script type="importmap">
 {
   "imports": {

@@ -53,18 +53,48 @@ export const Home: React.FC<HomeProps> = ({ posts, categories }) => {
 
   const getCategoryName = (id: number) => categories.find((c) => c.id === id)?.name || '未知分类';
 
+  // 递归获取所有子分类 ID (Memoized to avoid recalculation on every render)
+  const getDescendantIds = useMemo(() => {
+      return (rootId: number): number[] => {
+          const children = categories.filter(c => c.parentId == rootId); // Use == for loose comparison
+          let ids = children.map(c => c.id);
+          children.forEach(child => {
+              ids = [...ids, ...getDescendantIds(child.id)];
+          });
+          return ids;
+      };
+  }, [categories]);
+
+  // 计算分类文章数量 (包含子分类，递归)
+  const getCategoryCount = (catId: number) => {
+      const targetIds = new Set([catId, ...getDescendantIds(catId)]);
+      
+      return posts.filter(p => {
+          const pCatId = Number(p.categoryId);
+          return targetIds.has(pCatId);
+      }).length;
+  };
+
+  // 计算标签权重
+  const tagCounts = useMemo(() => {
+      const counts: Record<string, number> = {};
+      posts.forEach(p => p.tags.forEach(t => counts[t] = (counts[t] || 0) + 1));
+      return counts;
+  }, [posts]);
+
+  const getTagSizeClass = (count: number) => {
+      if (count >= 10) return 'text-lg font-bold';
+      if (count >= 5) return 'text-base font-medium';
+      return 'text-xs';
+  };
+
   const filteredPosts = useMemo(() => {
     return posts.filter((post) => {
-      // 分类逻辑：包含精确匹配 OR 如果文章分类是选中分类的子分类
+      // 分类逻辑：包含精确匹配 OR 如果文章分类是选中分类的子分类 (递归)
       let matchesCategory = true;
       if (activeCategoryId !== null) {
-        const isDirectMatch = post.categoryId === activeCategoryId;
-        
-        // 查找文章所属分类的父分类 ID
-        const parentId = categories.find((c) => c.id === post.categoryId)?.parentId;
-        const isChildMatch = parentId ? parentId === activeCategoryId : false;
-        
-        matchesCategory = isDirectMatch || isChildMatch;
+        const targetIds = new Set([activeCategoryId, ...getDescendantIds(activeCategoryId)]);
+        matchesCategory = targetIds.has(Number(post.categoryId));
       }
 
       const matchesTag = tagFilter ? post.tags.includes(tagFilter) : true;
@@ -135,7 +165,7 @@ export const Home: React.FC<HomeProps> = ({ posts, categories }) => {
 
                   return (
                       <li key={cat.id}>
-                          <div className={`flex items-center justify-between group rounded-lg px-2 py-1.5 transition-colors ${isActive ? 'bg-primary-50 dark:bg-primary-900/30 text-primary-700 dark:text-primary-300 font-bold' : 'text-slate-600 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800'}`}>
+                          <div className={`flex items-center justify-between group rounded-lg px-2 py-1.5 transition-colors ${isActive ? 'bg-primary-50 dark:bg-primary-900/30 text-primary-700 dark:text-primary-300 font-bold' : 'text-slate-700 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800'}`}>
                               <button 
                                 onClick={() => handleCategoryClick(cat.id)}
                                 className="flex-grow text-left text-sm flex items-center gap-2"
@@ -147,6 +177,9 @@ export const Home: React.FC<HomeProps> = ({ posts, categories }) => {
                                   )}
                                   {cat.name}
                               </button>
+                              <span className="text-xs text-slate-400 bg-slate-100 dark:bg-slate-800 px-1.5 py-0.5 rounded-full mr-1">
+                                  {getCategoryCount(cat.id)}
+                              </span>
                               {hasChildren && (
                                   <button onClick={(e) => toggleExpand(cat.id, e)} className="p-1 rounded hover:bg-slate-200 dark:hover:bg-slate-700">
                                       <ChevronDown className={`w-3 h-3 transition-transform ${isExpanded ? 'rotate-180' : ''}`} />
@@ -232,7 +265,7 @@ export const Home: React.FC<HomeProps> = ({ posts, categories }) => {
                     className="flex items-center justify-between cursor-pointer lg:cursor-default"
                     onClick={() => window.innerWidth < 1024 && setIsMobileCategoryOpen(!isMobileCategoryOpen)}
                   >
-                      <h3 className="font-bold text-lg font-serif">分类目录</h3>
+                      <h3 className="font-bold text-lg font-serif text-slate-900 dark:text-white">分类目录</h3>
                       <div className="flex items-center gap-2">
                         {activeCategoryId && (
                             <button onClick={(e) => {e.stopPropagation(); handleCategoryClick(null);}} className="text-xs text-red-500 hover:underline">清除</button>
@@ -250,11 +283,20 @@ export const Home: React.FC<HomeProps> = ({ posts, categories }) => {
                       
                       {/* Tag Cloud Preview */}
                       <div className="mt-8 pt-6 border-t border-slate-100 dark:border-slate-800">
-                          <h3 className="font-bold text-sm mb-4 text-slate-500 uppercase tracking-wider">热门标签</h3>
-                          <div className="flex flex-wrap gap-2">
-                             {Array.from(new Set(posts.flatMap((p) => p.tags))).slice(0, 8).map((tag) => (
-                                 <Link key={tag} to={`/?tag=${tag}`} className="text-xs bg-slate-100 dark:bg-slate-800 px-2 py-1 rounded text-slate-600 hover:text-primary-600">
-                                    #{tag}
+                          <h3 className="font-bold text-sm mb-4 text-slate-500 dark:text-slate-400 uppercase tracking-wider">热门标签</h3>
+                          <div className="flex flex-wrap gap-3 justify-center items-baseline">
+                             {Object.entries(tagCounts)
+                                .sort(([,a], [,b]) => b - a) // 按数量排序
+                                .slice(0, 20) // 显示前 20 个
+                                .map(([tag, count]) => (
+                                 <Link 
+                                    key={tag} 
+                                    to={`/?tag=${tag}`} 
+                                    className={`${getTagSizeClass(count)} px-2 py-1 rounded-lg text-slate-600 dark:text-slate-400 hover:text-primary-600 dark:hover:text-primary-400 hover:bg-slate-100 dark:hover:bg-slate-800 transition-all duration-300`}
+                                    title={`${count} 篇文章`}
+                                    style={{ opacity: Math.max(0.6, Math.min(1, count / 5)) }} // 根据数量调整透明度
+                                 >
+                                    {tag}
                                  </Link>
                              ))}
                           </div>
@@ -295,8 +337,8 @@ export const Home: React.FC<HomeProps> = ({ posts, categories }) => {
               ) : (
                 <div className="space-y-4 md:space-y-6">
                   {paginatedPosts.map((post) => (
-                    <article key={post.id} className="group bg-white dark:bg-slate-900 rounded-2xl overflow-hidden border border-slate-100 dark:border-slate-800 shadow-sm hover:shadow-lg transition-all duration-300 flex flex-col md:flex-row md:h-56">
-                      <Link to={`/post/${post.id}`} className="block relative overflow-hidden w-full md:w-1/3 h-40 md:h-full flex-shrink-0">
+                    <article key={post.id} className="group bg-white dark:bg-slate-900 rounded-2xl overflow-hidden border border-slate-100 dark:border-slate-800 shadow-sm hover:shadow-lg transition-all duration-300 flex flex-col md:flex-row">
+                      <Link to={`/post/${post.id}`} className="block relative overflow-hidden w-full md:w-1/3 h-40 md:min-h-full flex-shrink-0">
                         <img src={post.coverImage} alt={post.title} className="w-full h-full object-cover transition-transform duration-500 group-hover:scale-110" />
                         <div className="absolute top-3 left-3 bg-black/50 backdrop-blur text-[10px] md:text-xs font-bold px-2 py-1 rounded text-white">
                           {getCategoryName(post.categoryId)}
@@ -309,11 +351,11 @@ export const Home: React.FC<HomeProps> = ({ posts, categories }) => {
                                 {format(post.createdAt, 'yyyy年M月d日')}
                              </div>
                              <Link to={`/post/${post.id}`} className="block">
-                               <h2 className="text-lg md:text-xl font-serif font-bold mb-2 group-hover:text-primary-600 transition-colors line-clamp-1">
+                               <h2 className="text-lg md:text-xl font-serif font-bold mb-2 text-slate-900 dark:text-slate-100 group-hover:text-primary-600 dark:group-hover:text-primary-400 transition-colors line-clamp-1">
                                  {post.title}
                                </h2>
                              </Link>
-                             <p className="text-slate-600 dark:text-slate-400 text-xs md:text-sm leading-relaxed line-clamp-2 mb-3 md:mb-4">
+                             <p className="text-slate-600 dark:text-slate-400 text-xs md:text-sm leading-relaxed mb-3 md:mb-4">
                                {post.excerpt}
                              </p>
                          </div>

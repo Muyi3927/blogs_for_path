@@ -4,7 +4,7 @@ import { format } from 'date-fns';
 import { BlogPost, Category } from '../types';
 import { AuthContext } from '../App';
 import MarkdownRenderer from '../components/MarkdownRenderer';
-import { ArrowLeft, Calendar, User, Share2, Tag, Type, Minus, Plus, Volume2, Edit, Gauge, Trash2 } from 'lucide-react';
+import { ArrowLeft, Calendar, User, Share2, Tag, Type, Minus, Plus, Volume2, Edit, Gauge, Trash2, List, X } from 'lucide-react';
 
 interface PostDetailProps {
   posts: BlogPost[];
@@ -25,6 +25,25 @@ export const PostDetail: React.FC<PostDetailProps> = ({ posts, updatePost, onDel
   // Accessibility: Font Size State
   const [fontSizeLevel, setFontSizeLevel] = useState(0);
   const fontClasses = ['prose-lg', 'prose-xl', 'prose-2xl'];
+
+  // TOC State
+  const [showTOC, setShowTOC] = useState(false);
+  const [headings, setHeadings] = useState<{id: string, text: string, level: number}[]>([]);
+
+  useEffect(() => {
+    if (post) {
+      const timer = setTimeout(() => {
+        const elements = document.querySelectorAll('.prose h1, .prose h2, .prose h3');
+        const h = Array.from(elements).map(el => ({
+          id: el.id,
+          text: el.textContent || '',
+          level: parseInt(el.tagName.substring(1))
+        }));
+        setHeadings(h);
+      }, 200);
+      return () => clearTimeout(timer);
+    }
+  }, [post]);
 
   useEffect(() => {
     // --- 修复: 使用非严格相等 (==) 来比较数字 ID 和 URL 中的字符串 ID ---
@@ -89,8 +108,9 @@ export const PostDetail: React.FC<PostDetailProps> = ({ posts, updatePost, onDel
             )}
           </div>
 
-          {/* Accessibility Controls */}
-          <div className="flex items-center bg-white dark:bg-slate-800 rounded-full p-1 border border-slate-200 dark:border-slate-700 shadow-sm ml-auto">
+          {/* Accessibility & TOC Controls */}
+          <div className="flex items-center gap-2 ml-auto">
+          <div className="flex items-center bg-white dark:bg-slate-800 rounded-full p-1 border border-slate-200 dark:border-slate-700 shadow-sm">
              <div className="px-3 flex items-center gap-2 text-xs text-slate-400 font-bold uppercase tracking-wider">
                 <Type className="w-3 h-3" /> 字体
              </div>
@@ -111,6 +131,7 @@ export const PostDetail: React.FC<PostDetailProps> = ({ posts, updatePost, onDel
              >
                 <Plus className="w-4 h-4" />
              </button>
+          </div>
           </div>
       </div>
 
@@ -178,7 +199,7 @@ export const PostDetail: React.FC<PostDetailProps> = ({ posts, updatePost, onDel
                   <audio 
                       ref={audioRef}
                       controls 
-                      className="w-full h-10"
+                      className="w-full h-12 block"
                       src={post.audioUrl}
                   >
                       您的浏览器不支持音频播放。
@@ -194,6 +215,48 @@ export const PostDetail: React.FC<PostDetailProps> = ({ posts, updatePost, onDel
 
         </div>
       </article>
+
+      {/* Floating TOC Button */}
+      {headings.length > 0 && (
+        <button
+          onClick={() => setShowTOC(true)}
+          className="fixed bottom-8 right-8 z-40 p-3 bg-white dark:bg-slate-800 text-slate-600 dark:text-slate-300 rounded-full shadow-lg border border-slate-200 dark:border-slate-700 hover:text-primary-600 transition-all hover:scale-110"
+          title="目录"
+        >
+          <List className="w-6 h-6" />
+        </button>
+      )}
+
+      {/* TOC Overlay */}
+      {showTOC && (
+        <div className="fixed inset-0 z-50 flex justify-end bg-black/20 backdrop-blur-sm" onClick={() => setShowTOC(false)}>
+          <div 
+            className="w-80 bg-white dark:bg-slate-900 h-full shadow-2xl p-6 overflow-y-auto border-l border-slate-200 dark:border-slate-800 animate-in slide-in-from-right"
+            onClick={e => e.stopPropagation()}
+          >
+            <div className="flex items-center justify-between mb-6">
+              <h3 className="font-serif font-bold text-xl text-slate-900 dark:text-white">目录</h3>
+              <button onClick={() => setShowTOC(false)} className="p-2 hover:bg-slate-100 dark:hover:bg-slate-800 rounded-full">
+                <X className="w-5 h-5 text-slate-500 dark:text-slate-400" />
+              </button>
+            </div>
+            <nav className="space-y-1">
+              {headings.map((h, i) => (
+                <button 
+                  key={i} 
+                  onClick={() => {
+                    setShowTOC(false);
+                    document.getElementById(h.id)?.scrollIntoView({ behavior: 'smooth' });
+                  }}
+                  className={`block w-full text-left py-2 px-3 rounded-lg text-sm transition-colors hover:bg-slate-50 dark:hover:bg-slate-800 text-slate-700 dark:text-slate-300 ${h.level === 1 ? 'font-bold' : h.level === 2 ? 'pl-6' : 'pl-9 text-slate-500 dark:text-slate-400'}`}
+                >
+                  {h.text}
+                </button>
+              ))}
+            </nav>
+          </div>
+        </div>
+      )}
     </div>
   );
 };

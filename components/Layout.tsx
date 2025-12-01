@@ -59,7 +59,7 @@ export const Layout: React.FC<{ children: React.ReactNode }> = ({ children }) =>
                 </div>
                 <div className="flex flex-col -space-y-1">
                    <span className="font-serif font-bold text-lg tracking-tight text-slate-900 dark:text-slate-100">访问古道</span>
-                   <span className="text-[10px] text-slate-500 uppercase tracking-widest">Ask for the Ancient Paths</span>
+                   <span className="text-[10px] text-slate-500 dark:text-slate-400 uppercase tracking-widest">Ask for the Ancient Paths</span>
                 </div>
               </Link>
             </div>
@@ -156,13 +156,13 @@ export const Layout: React.FC<{ children: React.ReactNode }> = ({ children }) =>
       </main>
 
       {/* Footer */}
-      <footer className="bg-white dark:bg-slate-900 border-t border-slate-200 dark:border-slate-800 py-12 mt-12">
+      <footer className="bg-white dark:bg-slate-900 border-t border-slate-200 dark:border-slate-800 py-6 mt-12">
         <div className="max-w-7xl mx-auto px-4 text-center">
           <div className="flex justify-center items-center gap-2 mb-4">
              <BookOpen className="w-6 h-6 text-slate-400" />
-             <span className="font-serif font-bold text-xl text-slate-700 dark:text-slate-300">访问古道</span>
+             <span className="font-serif font-bold text-xl text-slate-700 dark:text-slate-200">访问古道</span>
           </div>
-          <p className="text-slate-500 text-sm max-w-md mx-auto leading-relaxed">
+          <p className="text-slate-500 dark:text-slate-400 text-sm max-w-md mx-auto leading-relaxed">
             耶和华如此说：你们当站在路上察看，访问古道，哪是善道，便行在其中，这样你们心里必得安息。
             <br/><span className="italic">- 耶利米书 6:16</span>
           </p>
@@ -171,7 +171,7 @@ export const Layout: React.FC<{ children: React.ReactNode }> = ({ children }) =>
             className="mt-8 text-xs text-slate-400 cursor-text select-none"
             onClick={handleHiddenLoginClick}
           >
-            &copy; {new Date().getFullYear()} 访问古道 (Ancient Paths). Soli Deo Gloria.
+            &copy; {new Date().getFullYear()} 访问古道 (Ancient Paths). 唯独荣耀归于神.
           </div>
         </div>
       </footer>
