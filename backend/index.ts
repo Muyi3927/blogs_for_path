@@ -123,22 +123,33 @@ app.post('/api/posts', async (c: any) => {
     const { id, title, excerpt, content, coverImage, categoryId, tags, isFeatured, audioUrl, author } = body;
     
     const now = Date.now();
-    const tagString = JSON.stringify(tags || []);
-
     // --- 检查文章是否存在 ---
-    const existing = id ? await c.env.DB.prepare('SELECT id FROM posts WHERE id = ?').bind(id).first() : null;
+    // Change SELECT id to SELECT * to support partial updates
+    const existing = id ? await c.env.DB.prepare('SELECT * FROM posts WHERE id = ?').bind(id).first() : null;
 
     if (existing) {
         // --- 更新现有文章 ---
+        // Merge existing data with new data to handle partial updates
+        const newTitle = title ?? existing.title;
+        const newExcerpt = excerpt ?? existing.excerpt;
+        const newContent = content ?? existing.content;
+        const newCoverImage = coverImage ?? existing.coverImage;
+        const newCategoryId = categoryId ?? existing.categoryId;
+        // tags comes as array from body, but stored as string in DB. existing.tags is string.
+        const newTags = tags !== undefined ? JSON.stringify(tags) : existing.tags;
+        const newIsFeatured = isFeatured !== undefined ? (isFeatured ? 1 : 0) : existing.isFeatured;
+        const newAudioUrl = audioUrl ?? existing.audioUrl;
+
         await c.env.DB.prepare(`
             UPDATE posts SET title=?, excerpt=?, content=?, coverImage=?, updatedAt=?, categoryId=?, tags=?, isFeatured=?, audioUrl=?
             WHERE id=?
-        `).bind(title, excerpt, content, coverImage, now, categoryId, tagString, isFeatured ? 1 : 0, audioUrl, id).run();
+        `).bind(newTitle, newExcerpt, newContent, newCoverImage, now, newCategoryId, newTags, newIsFeatured, newAudioUrl, id).run();
         
         return c.json({ success: true, id: id });
 
     } else {
         // --- 插入新文章 (让数据库自动生成自增 ID) ---
+        const tagString = JSON.stringify(tags || []);
         const result = await c.env.DB.prepare(`
             INSERT INTO posts (title, excerpt, content, coverImage, createdAt, updatedAt, categoryId, tags, isFeatured, audioUrl, authorName)
             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)

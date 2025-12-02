@@ -12,9 +12,10 @@ interface EditorProps {
   onAddCategory: (name: string, parentId: number | null) => void;
   onDeleteCategory: (id: number) => void;
   posts: BlogPost[];
+  onRefresh: () => Promise<void>;
 }
 
-export const Editor: React.FC<EditorProps> = ({ onSave, categories, onAddCategory, onDeleteCategory, posts }) => {
+export const Editor: React.FC<EditorProps> = ({ onSave, categories, onAddCategory, onDeleteCategory, posts, onRefresh }) => {
   const navigate = useNavigate();
   const { id: idString } = useParams<{ id: string }>();
   const id = idString ? Number(idString) : undefined;
@@ -42,6 +43,11 @@ export const Editor: React.FC<EditorProps> = ({ onSave, categories, onAddCategor
   const [newCategoryName, setNewCategoryName] = useState('');
   const [newCategoryParent, setNewCategoryParent] = useState<number | ''>(''); // empty string = root
 
+  // Tag Management State
+  const [isManagingTags, setIsManagingTags] = useState(false);
+  const [editingTag, setEditingTag] = useState<string | null>(null);
+  const [newTagName, setNewTagName] = useState('');
+
   // Refs for file inputs
   const imageInputRef = useRef<HTMLInputElement>(null);
   const audioInputRef = useRef<HTMLInputElement>(null);
@@ -51,6 +57,13 @@ export const Editor: React.FC<EditorProps> = ({ onSave, categories, onAddCategor
     posts.forEach(p => p.tags.forEach(t => allTags.add(t)));
     return Array.from(allTags).filter(t => !currentTags.includes(t));
   }, [posts, currentTags]);
+
+  // All unique tags for management
+  const allUniqueTags = useMemo(() => {
+      const tags = new Set<string>();
+      posts.forEach(p => p.tags.forEach(t => tags.add(t)));
+      return Array.from(tags).sort();
+  }, [posts]);
 
   useEffect(() => {
     if (id && posts.length > 0) {
@@ -76,6 +89,76 @@ export const Editor: React.FC<EditorProps> = ({ onSave, categories, onAddCategor
   if (!user || !isAdmin) {
     return <div className="text-center py-20 text-red-500 font-bold">拒绝访问。仅限管理员。</div>;
   }
+
+  // Tag Management Functions
+  const handleRenameTag = async (oldTag: string) => {
+      const newTag = newTagName.trim();
+      if (!newTag || newTag === oldTag) return;
+      
+      if (!window.confirm(`确定将所有文章中的标签 "${oldTag}" 修改为 "${newTag}" 吗？`)) return;
+
+      const affectedPosts = posts.filter(p => p.tags.includes(oldTag));
+      setIsSubmitting(true);
+      try {
+          await Promise.all(affectedPosts.map(p => {
+              const newTags = p.tags.map(t => t === oldTag ? newTag : t);
+              // Remove duplicates if newTag already existed
+              const uniqueTags = Array.from(new Set(newTags));
+              return updatePost(p.id, { tags: uniqueTags });
+          }));
+          await onRefresh();
+          setEditingTag(null);
+          setNewTagName('');
+          alert(`已更新 ${affectedPosts.length} 篇文章的标签。`);
+      } catch (e) {
+          console.error(e);
+          alert('更新标签失败');
+      } finally {
+          setIsSubmitting(false);
+      }
+  };
+
+  const handleDeleteTagGlobal = async (tag: string) => {
+      if (!window.confirm(`确定要删除标签 "${tag}" 吗？这将从所有包含该标签的文章中移除它。`)) return;
+      
+      const affectedPosts = posts.filter(p => p.tags.includes(tag));
+      setIsSubmitting(true);
+      try {
+          await Promise.all(affectedPosts.map(p => {
+              const newTags = p.tags.filter(t => t !== tag);
+              return updatePost(p.id, { tags: newTags });
+          }));
+          await onRefresh();
+          alert(`已从 ${affectedPosts.length} 篇文章中移除标签 "${tag}"。`);
+      } catch (e) {
+          console.error(e);
+          alert('删除标签失败');
+      } finally {
+          setIsSubmitting(false);
+      }
+  };
+
+  // Drag and Drop State
+  const [draggedTagIndex, setDraggedTagIndex] = useState<number | null>(null);
+
+  const handleDragStart = (index: number) => {
+    setDraggedTagIndex(index);
+  };
+
+  const handleDragOver = (e: React.DragEvent) => {
+    e.preventDefault(); // Necessary to allow dropping
+  };
+
+  const handleDrop = (targetIndex: number) => {
+    if (draggedTagIndex === null || draggedTagIndex === targetIndex) return;
+
+    const newTags = [...currentTags];
+    const [draggedTag] = newTags.splice(draggedTagIndex, 1);
+    newTags.splice(targetIndex, 0, draggedTag);
+    
+    setCurrentTags(newTags);
+    setDraggedTagIndex(null);
+  };
 
   // File Upload Handlers
   const handleFileUpload = async (e: React.ChangeEvent<HTMLInputElement>, type: 'image' | 'audio') => {
@@ -139,13 +222,15 @@ export const Editor: React.FC<EditorProps> = ({ onSave, categories, onAddCategor
     };
 
     try {
-       let savedPost;
        if (id) {
-         savedPost = await updatePost(id, postData);
+         await updatePost(id, postData);
        } else {
-         savedPost = await createPost(postData);
+         await createPost(postData);
        }
-       onSave(savedPost);
+       
+       // Refresh data from server to ensure consistency
+       await onRefresh();
+       
        navigate('/');
     } catch (e) {
        console.error("保存失败", e);
@@ -359,11 +444,19 @@ export const Editor: React.FC<EditorProps> = ({ onSave, categories, onAddCategor
                             </div>
 
                             {/* Tag Management */}
-                            <div className="flex-grow flex flex-col gap-2">
+                            <div className="flex-grow flex flex-col gap-2 relative">
                                 <div className="flex items-center gap-2 flex-wrap p-2 bg-slate-100 dark:bg-slate-800 rounded-lg min-h-[42px]">
                                     <TagIcon className="w-4 h-4 text-slate-400" />
-                                    {currentTags.map(tag => (
-                                        <span key={tag} className="flex items-center gap-1 bg-white dark:bg-slate-700 px-2 py-1 rounded text-xs shadow-sm">
+                                    {currentTags.map((tag, index) => (
+                                        <span 
+                                          key={tag} 
+                                          draggable
+                                          onDragStart={() => handleDragStart(index)}
+                                          onDragOver={handleDragOver}
+                                          onDrop={() => handleDrop(index)}
+                                          className={`flex items-center gap-1 bg-white dark:bg-slate-700 px-2 py-1 rounded text-xs shadow-sm cursor-move transition-all ${draggedTagIndex === index ? 'opacity-50 scale-95' : 'hover:scale-105'}`}
+                                          title="拖动以排序"
+                                        >
                                             {tag}
                                             <button onClick={() => removeTag(tag)} className="text-slate-400 hover:text-red-500"><X className="w-3 h-3"/></button>
                                         </span>
@@ -376,7 +469,65 @@ export const Editor: React.FC<EditorProps> = ({ onSave, categories, onAddCategor
                                         onKeyDown={handleTagKeyDown}
                                         className="bg-transparent text-sm outline-none flex-grow min-w-[80px]"
                                     />
+                                    <button 
+                                        onClick={() => setIsManagingTags(true)}
+                                        className="ml-auto p-1 text-slate-400 hover:text-slate-600"
+                                        title="管理所有标签"
+                                    >
+                                        <Settings className="w-3 h-3" />
+                                    </button>
                                 </div>
+                                
+                                {/* Tag Manager Modal */}
+                                {isManagingTags && (
+                                    <div className="absolute top-full left-0 right-0 mt-2 z-20 bg-white dark:bg-slate-800 rounded-lg shadow-xl border border-slate-200 dark:border-slate-700 p-4 animate-in fade-in slide-in-from-top-2">
+                                        <div className="flex justify-between items-center mb-3 border-b border-slate-100 dark:border-slate-700 pb-2">
+                                            <h3 className="text-sm font-bold text-slate-700 dark:text-slate-300">标签管理</h3>
+                                            <button onClick={() => setIsManagingTags(false)} className="text-slate-400 hover:text-slate-600"><X className="w-4 h-4"/></button>
+                                        </div>
+                                        <div className="max-h-60 overflow-y-auto space-y-2">
+                                            {allUniqueTags.map(tag => (
+                                                <div key={tag} className="flex items-center justify-between bg-slate-50 dark:bg-slate-700/50 p-2 rounded text-xs">
+                                                    {editingTag === tag ? (
+                                                        <div className="flex items-center gap-2 flex-grow">
+                                                            <input 
+                                                                type="text" 
+                                                                value={newTagName}
+                                                                onChange={e => setNewTagName(e.target.value)}
+                                                                className="bg-white dark:bg-slate-600 border border-slate-200 dark:border-slate-500 rounded px-2 py-1 flex-grow outline-none"
+                                                                autoFocus
+                                                            />
+                                                            <button onClick={() => handleRenameTag(tag)} className="text-green-600 hover:text-green-700 font-bold">保存</button>
+                                                            <button onClick={() => setEditingTag(null)} className="text-slate-400 hover:text-slate-600">取消</button>
+                                                        </div>
+                                                    ) : (
+                                                        <>
+                                                            <span className="font-medium text-slate-700 dark:text-slate-300">{tag}</span>
+                                                            <div className="flex items-center gap-2">
+                                                                <button 
+                                                                    onClick={() => { setEditingTag(tag); setNewTagName(tag); }}
+                                                                    className="text-primary-600 hover:text-primary-700 p-1"
+                                                                    title="重命名"
+                                                                >
+                                                                    <Edit3 className="w-3 h-3" />
+                                                                </button>
+                                                                <button 
+                                                                    onClick={() => handleDeleteTagGlobal(tag)}
+                                                                    className="text-red-500 hover:text-red-600 p-1"
+                                                                    title="删除标签 (从所有文章中移除)"
+                                                                >
+                                                                    <Trash2 className="w-3 h-3" />
+                                                                </button>
+                                                            </div>
+                                                        </>
+                                                    )}
+                                                </div>
+                                            ))}
+                                            {allUniqueTags.length === 0 && <div className="text-center text-slate-400 py-4">暂无标签</div>}
+                                        </div>
+                                    </div>
+                                )}
+
                                 {/* Suggested Tags */}
                                 {suggestedTags.length > 0 && (
                                     <div className="flex flex-wrap gap-2 px-1">

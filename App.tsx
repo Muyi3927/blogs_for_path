@@ -59,24 +59,29 @@ const App: React.FC = () => {
   }, [isDark]);
 
   // 从后端加载数据
-  useEffect(() => {
-    const loadData = async () => {
-      try {
-        const [fetchedPosts, fetchedCategories] = await Promise.all([
-          getPosts(),
-          getCategories()
-        ]);
-        
-        // 仅当获取到有效数据时更新状态
-        if (fetchedPosts) setPosts(fetchedPosts);
-        if (fetchedCategories && fetchedCategories.length > 0) setCategories(fetchedCategories);
-      } catch (e) {
-        console.error("从 API 加载数据失败", e);
-      } finally {
-        setLoading(false);
+  const refreshPosts = async () => {
+    try {
+      const [fetchedPosts, fetchedCategories] = await Promise.all([
+        getPosts(),
+        getCategories()
+      ]);
+      
+      // 仅当获取到有效数据时更新状态
+      if (fetchedPosts) setPosts(fetchedPosts);
+      if (fetchedCategories && fetchedCategories.length > 0) {
+        // 按照名称正序排序 (支持中文)
+        fetchedCategories.sort((a, b) => a.name.localeCompare(b.name, 'zh-CN'));
+        setCategories(fetchedCategories);
       }
-    };
-    loadData();
+    } catch (e) {
+      console.error("从 API 加载数据失败", e);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  useEffect(() => {
+    refreshPosts();
   }, []);
 
   const toggleTheme = () => setIsDark(!isDark);
@@ -104,7 +109,7 @@ const App: React.FC = () => {
   const addCategory = async (name: string, parentId: number | null) => {
     try {
       const newCat = await createCategory({ name, parentId: parentId ?? undefined });
-      setCategories(prev => [...prev, newCat]);
+      setCategories(prev => [...prev, newCat].sort((a, b) => a.name.localeCompare(b.name, 'zh-CN')));
     } catch (e) {
       console.error('在服务器上创建分类失败:', e);
       alert('无法保存分类到后端，请检查后端部署或网络。');
@@ -207,6 +212,7 @@ const App: React.FC = () => {
                     onAddCategory={addCategory}
                     onDeleteCategory={deleteCategory}
                     posts={posts}
+                    onRefresh={refreshPosts}
                   />
                 } 
               />
@@ -219,6 +225,7 @@ const App: React.FC = () => {
                     onAddCategory={addCategory}
                     onDeleteCategory={deleteCategory}
                     posts={posts}
+                    onRefresh={refreshPosts}
                   />
                 } 
               />
