@@ -29,9 +29,12 @@ app.use('/*', cors());
 // --- Auth Helper ---
 const checkAuth = (c: any) => {
   const authHeader = c.req.header('Authorization');
-  // Default secret if env var is not set. 
-  // IMPORTANT: Change this for production!
-  const secret = c.env.AUTH_SECRET || "fwgd3927"; 
+  const secret = c.env.AUTH_SECRET;
+  
+  if (!secret) {
+    console.error("AUTH_SECRET is not configured");
+    return false;
+  }
   
   if (!authHeader || authHeader !== `Bearer ${secret}`) {
     return false;
@@ -40,6 +43,26 @@ const checkAuth = (c: any) => {
 };
 
 // --- 路由 ---
+
+// Login Endpoint
+app.post('/api/login', async (c) => {
+  try {
+    const { password } = await c.req.json();
+    const secret = c.env.AUTH_SECRET;
+    
+    if (!secret) {
+      return c.json({ error: 'Server configuration error' }, 500);
+    }
+    
+    if (password === secret) {
+      return c.json({ success: true, token: secret });
+    } else {
+      return c.json({ error: 'Invalid credentials' }, 401);
+    }
+  } catch (e) {
+    return c.json({ error: 'Invalid request' }, 400);
+  }
+});
 
 // 0. 代理 R2 图片/音频 (解决 404 问题)
 app.get('/api/media/:folder/:filename', async (c) => {
@@ -74,10 +97,33 @@ app.get('/api/media/:folder/:filename', async (c) => {
 // 1. 获取所有文章
 app.get('/api/posts', async (c) => {
   try {
+    const categoryId = c.req.query('categoryId');
+    const search = c.req.query('search');
+    let query = `SELECT * FROM posts`;
+    const params: any[] = [];
+    const conditions: string[] = [];
+
+    // Ensure categoryId is valid and not "undefined" string
+    if (categoryId && categoryId !== 'undefined' && categoryId !== 'null') {
+      conditions.push(`categoryId = ?`);
+      params.push(categoryId);
+    }
+
+    if (search) {
+      conditions.push(`(title LIKE ? OR content LIKE ?)`);
+      params.push(`%${search}%`);
+      params.push(`%${search}%`);
+    }
+
+    if (conditions.length > 0) {
+      query += ` WHERE ` + conditions.join(' AND ');
+    }
+
+    query += ` ORDER BY createdAt DESC`;
+
     // D1: 查询 posts 表，按创建时间倒序排序
-    const { results } = await c.env.DB.prepare(
-      `SELECT * FROM posts ORDER BY createdAt DESC`
-    ).all();
+    const stmt = c.env.DB.prepare(query);
+    const { results } = await (params.length > 0 ? stmt.bind(...params) : stmt).all();
     
     // 格式化从数据库取出的数据，以匹配前端 BlogPost 接口
     const posts = results.map((p: any) => ({
